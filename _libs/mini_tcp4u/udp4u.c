@@ -10,49 +10,38 @@
  * Source released under GPL license
  */
 
-//#include <windows.h>
-// #include <winsock2.h>
-#include <ws2tcpip.h>
+#include <windows.h>
+#include <winsock.h>
 #include <time.h>
 
 #include "tcp4u.h"
-#include "../log/LogToMonitor.h"
 
 
 // send data using Udp
-int UdpSend (int nFromPort, struct sockaddr *sa_to, int sa_len, const char *data, int len)
+int UdpSend (int nFromPort, struct sockaddr_in *sa_to, const char *data, int len)
 {
-SOCKET              s;
-SOCKADDR_STORAGE    sa_from;
-int                 Rc;
-int                 True=1;
-char                szServ[NI_MAXSERV];
-ADDRINFO            Hints, *res;
+SOCKET s;
+struct sockaddr_in sa_from;
+int    Rc;
+int True=1;
+
+   s = socket (AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+   if (s == INVALID_SOCKET)  return TCP4U_ERROR;
+   // REUSEADDR option in order to allow thread to open 69 port
+   Rc = setsockopt (s, SOL_SOCKET, SO_REUSEADDR, (char *) & True, sizeof True);
+   LogToMonitor (Rc==0 ? "UdpSend: Port %d may be reused" : "setsockopt error", nFromPort);
 
    // populate sa_from
-   memset (&sa_from, 0, sizeof sa_from);
-	   Hints.ai_family = sa_to->sa_family;
-	   Hints.ai_flags = NI_NUMERICSERV;
-	   Hints.ai_socktype = SOCK_DGRAM;
-	   Hints.ai_protocol = IPPROTO_UDP;
-       wsprintf (szServ, "%d", nFromPort);
-       Rc = getaddrinfo (NULL, szServ, & Hints, & res);
+   sa_from.sin_family = AF_INET;
+   sa_from.sin_addr.s_addr = htonl (INADDR_ANY); // will be changed by sendto
+   sa_from.sin_port = htons (nFromPort);
+   Rc = bind (s, & sa_from, sizeof sa_from);
+   LogToMonitor ("UdpSend bind returns %d (error %d)", Rc, GetLastError ());
+   if (Rc<0) { closesocket (s); return TCP4U_BINDERROR; }
 
-	   s = socket (res->ai_family, res->ai_socktype, res->ai_protocol);
-      if (s == INVALID_SOCKET)  return TCP4U_ERROR;
-     // REUSEADDR option in order to allow thread to open 69 port
-      Rc = setsockopt (s, SOL_SOCKET, SO_REUSEADDR, (char *) & True, sizeof True);
-      LogToMonitor (Rc==0 ? "UdpSend: Port %d may be reused" : "setsockopt error", nFromPort);
-
-	  Rc = bind (s, res->ai_addr, res->ai_addrlen);
-	  freeaddrinfo(res);
-
-      LogToMonitor ("UdpSend bind returns %d (error %d)", Rc, GetLastError ());
-      if (Rc<0) { closesocket (s); return TCP4U_BINDERROR; }
-
-      Rc = sendto (s, data, len, 0, sa_to, sa_len);
-      LogToMonitor ("sendto returns %d", Rc);
-      closesocket (s);
+   Rc = sendto (s, data, len, 0, sa_to, sizeof *sa_to);
+   LogToMonitor ("sendto returns %d", Rc);
+   closesocket (s);
 return Rc;
 } // UdpSend
 

@@ -3,7 +3,7 @@
 // Projet TFTPD32.  Mars 2000 Ph.jounin
 // File dialog_common.c: 
 //			A sendmsg API for both GUI and services
-//          It's a kind of TcpPPSend with a complimentory
+//          It's a king of TcpPPSend with a complimentory
 //          integer parameter
 //
 // released under European Union Public License

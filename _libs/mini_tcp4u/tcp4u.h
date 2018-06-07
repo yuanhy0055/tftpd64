@@ -33,18 +33,18 @@
 
 
 
-SOCKET TcpGetListenSocket (int family, LPCSTR szService, unsigned short *pPort);
+struct in_addr Tcp4uGetIPAddr (LPCSTR szHost);
+SOCKET TcpGetListenSocket (LPCSTR szService, unsigned short *pPort);
 int TcpRecv (SOCKET s, LPSTR szBuf, unsigned uBufSize, unsigned uTimeOut, HANDLE hLogFile);
 int TcpSend (SOCKET s, LPCSTR szBuf, unsigned uBufSize, HANDLE hLogFile);
-SOCKET TcpConnect (LPCSTR  szHost,
-                   LPCSTR  szService, 
-				   int     family,
+SOCKET TcpConnect (LPCSTR szHost,
+                   LPCSTR szService, 
                    unsigned short nPort);
 int TcpPPSend (SOCKET s, LPCSTR szBuf, unsigned uBufSize, HANDLE hLogFile);
 int TcpPPRecv (SOCKET s, LPSTR szBuf, unsigned uBufSize, int uTimeOut, HANDLE hLogFile);
 
-int TcpExchangeChallenge (SOCKET s, int seed, int nVersion, int *peerVersion, const char *key);
+int TcpExchangeChallenge (SOCKET s, int seed, int nVersion, const char *key);
 
-int UdpSend (int nFromPort, struct sockaddr *sa_to, int sa_len, const char *data, int len);
+int UdpSend (int nFromPort, struct sockaddr_in *sa_to, const char *data, int len);
 
 

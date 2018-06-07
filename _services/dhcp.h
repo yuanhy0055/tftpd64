@@ -158,7 +158,6 @@ struct dhcp_packet {
 #define DHO_DHCP_CLIENT_IDENTIFIER      61
 #define DHO_NWIP_DOMAIN_NAME            62
 #define DHO_NWIP_SUBOPTIONS             63
-#define DHO_TFTP_SERVER					66
 #define DHO_USER_CLASS                  77
 #define DHO_FQDN                        81
 #define DHO_DHCP_AGENT_OPTIONS          82
@@ -171,7 +170,6 @@ struct dhcp_packet {
 #define  DHO_PXE_UUID                   97
 
 #define DHO_SUBNET_SELECTION           118 /* RFC3011! */
-#define DHO_SIP_SERVERS                120
 
 /* The DHO_AUTHENTICATE option is not a standard yet, so I've
    allocated an option out of the "local" option space for it on a

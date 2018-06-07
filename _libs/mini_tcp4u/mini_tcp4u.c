@@ -11,69 +11,68 @@
  */
 
 
-//#include <windows.h>
-#include <ws2tcpip.h>
+#include <windows.h>
+#include <winsock.h>
 #include <time.h>
 
 #include "tcp4u.h"
-#include "..\log\logtomonitor.h"
 
-
-
-// free resources for TcpGetListenSocket
-static int BadEnd (SOCKET s, LPADDRINFO res)
+struct in_addr Tcp4uGetIPAddr (LPCSTR szHost)
 {
-int Rc;
+struct hostent *  lpHostEnt;
+struct in_addr    sin_addr;
+
+  sin_addr.s_addr = inet_addr (szHost); /* doted address */
+  if (sin_addr.s_addr==INADDR_NONE)     /* si pas une doted address  */
+  {                      /* regarder le fichier hosts */
+      lpHostEnt = gethostbyname (szHost);
+      if (lpHostEnt!=NULL)
+         memcpy (& sin_addr.s_addr, lpHostEnt->h_addr, lpHostEnt->h_length);
+    }
+return sin_addr;
+} /* Tcp4uGetIPAddr */
+
+
+SOCKET TcpGetListenSocket (LPCSTR szService, unsigned short * pPort)
+{
+struct sockaddr_in   saSockAddr; /* specifications pour le Accept */
+int                  sockaddr_size = sizeof (struct sockaddr);
+SOCKET               ListenSock;
+int                  Rc;
+struct servent     * lpServEnt;
+
+
+   ListenSock = INVALID_SOCKET;
+   /* --- 1er champ de saSockAddr : Port */
+   lpServEnt =  (szService==NULL) ? NULL : getservbyname (szService, "tcp") ;
+   saSockAddr.sin_port = (lpServEnt!=NULL) ? lpServEnt->s_port : htons (*pPort);
+   
+  /* create socket */
+  ListenSock = socket (AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if (ListenSock == INVALID_SOCKET)  return INVALID_SOCKET;
+
+  saSockAddr.sin_family = AF_INET;
+  saSockAddr.sin_addr.s_addr=INADDR_ANY;
+  /* Bind name to socket */
+  Rc =   bind (ListenSock,(struct sockaddr *) & saSockAddr, sockaddr_size);
+  if (Rc==SOCKET_ERROR)
+  {
 	  Rc = GetLastError ();
-      if (s!=INVALID_SOCKET) closesocket (s);
-	  if (res!=NULL)         freeaddrinfo (res);
+      closesocket (ListenSock);
 	  SetLastError (Rc);
       return  INVALID_SOCKET;
-} // BadEnd
-
-
-SOCKET TcpGetListenSocket (int family, LPCSTR szService, unsigned short * pPort)
-{
-SOCKET               ListenSock = INVALID_SOCKET;
-int                  Rc;
-ADDRINFO             Hints, *res=NULL;
-char                 szServ [NI_MAXSERV];
-
-   memset (&Hints, 0, sizeof Hints);
-   Hints.ai_family   = family;
-   Hints.ai_socktype = SOCK_STREAM;
-   Hints.ai_protocol = IPPROTO_TCP;
-   Hints.ai_flags    = AI_PASSIVE;
-   
-   Rc = getaddrinfo (NULL, szService, & Hints, & res);
-   if (Rc==WSASERVICE_NOT_FOUND  ||  Rc==WSATYPE_NOT_FOUND)
-   {
-	   Hints.ai_flags |= AI_NUMERICSERV;
-	   wsprintf (szServ, "%d", pPort==NULL ? 0 : *pPort);
-	   Rc = getaddrinfo (NULL, szServ, & Hints, & res);
-   }
-   if (Rc !=0)                       return BadEnd (ListenSock, res);
-
-  /* create socket */
-   ListenSock = socket (res->ai_family, res->ai_socktype, res->ai_protocol);
-  if (ListenSock == INVALID_SOCKET)  return BadEnd (ListenSock, res);
-
-  /* Bind name to socket */
-  Rc =   bind (ListenSock,(struct sockaddr *) res->ai_addr, res->ai_addrlen);
-  if (Rc==SOCKET_ERROR)              return BadEnd (ListenSock, res);
-  Rc = listen (ListenSock, 1);
-  if (Rc==SOCKET_ERROR)              return BadEnd (ListenSock, res);
-  if (Rc==0  && pPort!=NULL)
-  {
-	  switch (res->ai_family)
-	  {
-	      case AF_INET  :  *pPort = htons ( (* (struct sockaddr_in *) res->ai_addr).sin_port);
-			                break;
-	      case AF_INET6 :  *pPort = htons ( (* (struct sockaddr_in6 *) res->ai_addr).sin6_port);
-			                break;
-	  }
   }
-  freeaddrinfo (res);
+  Rc = listen (ListenSock, 1);
+  if (Rc==SOCKET_ERROR)
+  {
+	  Rc = GetLastError ();
+      closesocket (ListenSock);
+	  SetLastError (Rc);
+      return  INVALID_SOCKET;
+  }
+  Rc = getsockname (ListenSock, (struct sockaddr *) & saSockAddr, & sockaddr_size );
+  if (Rc==0)
+	 *pPort = htons (saSockAddr.sin_port);
 return ListenSock;
 }  /* TcpGetListenSock */
 
@@ -93,7 +92,6 @@ fd_set          ReadMask;   /* select mask                    */
 DWORD           dummy;
 
   if (s==INVALID_SOCKET)  return TCP4U_ERROR;
-
   FD_ZERO (& ReadMask);     /* mise a zero du masque */
   FD_SET (s, & ReadMask);   /* Attente d'evenement en lecture */
 
@@ -112,12 +110,9 @@ DWORD           dummy;
                                 break;
   }
   /* s+1 normally unused but better for a lot of bugged TCP Stacks */
-  Rc = select (s+1, & ReadMask, NULL, NULL, pTO);
+  Rc = select ((int) s+1, & ReadMask, NULL, NULL, pTO);
   if (Rc<0) 
-  {
-	 LogToMonitor ("select returns error %d\n", WSAGetLastError());
      return  TCP4U_ERROR;
-  }
   if (Rc==0)
      return  TCP4U_TIMEOUT;  /* timeout en reception           */
 
@@ -129,7 +124,6 @@ DWORD           dummy;
   switch (Rc)
   {
        case SOCKET_ERROR : 
-		 	  LogToMonitor ("recv returns error %d\n", WSAGetLastError());
               nUpRc = TCP4U_ERROR ; 
               break;
        case 0            : 
@@ -174,14 +168,11 @@ unsigned short usSize = htons (uBufSize);
   if (hLogFile!=INVALID_HANDLE_VALUE)    WriteFile (hLogFile, szBuf, uBufSize, &dummy, NULL);
 
   // send msg length
-  Rc = send (s, (char *) & usSize, sizeof usSize, 0);
-  for ( Total = 0 ;  Total < uBufSize  &&  Rc > 0 ;  Total += Rc)
+  send (s, (char *) & usSize, sizeof usSize, 0);
+  for ( Total = 0, Rc = 1 ;  Total < uBufSize  &&  Rc > 0 ;  Total += Rc)
   {
       Rc = send (s, & szBuf[Total], uBufSize-Total, 0);
   }
-  if (Rc<0) 
-		LogToMonitor ("send returns error %d\n", WSAGetLastError());
- 
 return Total>=uBufSize ? TCP4U_SUCCESS :  TCP4U_ERROR;
 } /* TcpPPSend */
 
@@ -216,40 +207,29 @@ return usUpRc>0 ? usReceived : usUpRc ;
 
 
 
-SOCKET TcpConnect ( LPCSTR  szHost,
-                    LPCSTR  szService, 
-					int     family,
-                    unsigned short nPort)
+SOCKET TcpConnect (LPCSTR szHost,
+                   LPCSTR szService, 
+                   unsigned short nPort)
 {
-SOCKET               connect_skt = INVALID_SOCKET ;
-int                  Rc;
-ADDRINFO             Hints, *res=NULL;
-char                 szServ [NI_MAXSERV];
+int                   Rc;
+struct sockaddr_in    saSockAddr;
+struct servent     *  lpServEnt;
+SOCKET                connect_skt;
 
-   memset (&Hints, 0, sizeof Hints);
-   Hints.ai_family = family;
-   Hints.ai_socktype = SOCK_STREAM;
-   Hints.ai_protocol = IPPROTO_TCP;
-
-   Rc = getaddrinfo (szHost, szService, & Hints, & res);
-   if (Rc==WSASERVICE_NOT_FOUND  ||  Rc==WSATYPE_NOT_FOUND)
-   {
-	   Hints.ai_flags |= AI_NUMERICSERV;
-	   wsprintf (szServ, "%d", nPort);
-	   Rc = getaddrinfo (szHost, szServ, & Hints, & res);
-   }
-   if (Rc !=0)                       return BadEnd (connect_skt, res);
-   
-  /* create socket */
-   connect_skt = socket (res->ai_family, res->ai_socktype, res->ai_protocol);
-  if (connect_skt == INVALID_SOCKET)   return BadEnd (connect_skt, res);
-
-
+  /* --- 1er champ de saSockAddr : Port */
+  lpServEnt = (szService==NULL) ?  NULL :  getservbyname (szService, "tcp") ;  
+  saSockAddr.sin_port = lpServEnt!=NULL ?   lpServEnt->s_port : htons(nPort);
+  /* --- 2eme champ de saSockAddr : Addresse serveur */
+  saSockAddr.sin_addr = Tcp4uGetIPAddr (szHost);
+  if (saSockAddr.sin_addr.s_addr==INADDR_NONE)   return INVALID_SOCKET;
+  /* --- Dernier champ : liaison connectie */
+  saSockAddr.sin_family      = AF_INET; /* on utilise le mode connecte TCP */
+  /* --- creation de la socket */
+  if ( (connect_skt = socket (PF_INET, SOCK_STREAM, 0))==SOCKET_ERROR)
+       return  SOCKET_ERROR;
   /* --- connect retourne INVALID_SOCKET ou numero valide */
-  Rc = connect (connect_skt,(struct sockaddr *) res->ai_addr, res->ai_addrlen);
-  if (Rc!=0)                         return BadEnd (connect_skt, res);
-  freeaddrinfo (res);
+  Rc = connect (connect_skt,(struct sockaddr *) & saSockAddr, sizeof saSockAddr);
   /* --- enregistrement dans notre table */
-return connect_skt ;
+return Rc==0 ? connect_skt : SOCKET_ERROR;
 }  /* TcpConnect */
 

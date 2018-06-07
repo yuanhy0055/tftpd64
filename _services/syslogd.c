@@ -74,7 +74,7 @@ void SyslogProc (void * param)
 SOCKET   sSyslogListenSocket=INVALID_SOCKET;
 char     szSyslogBuf[SYSLOG_MAXMSG+1]; // Buffer 
 int             Rc;
-SOCKADDR_STORAGE sSock;
+struct sockaddr_in sSock;
 int             nDummy;
 HANDLE m_hPipe=INVALID_HANDLE_VALUE; 
 struct S_SyslogMsg msg;
@@ -88,8 +88,6 @@ struct S_SyslogMsg msg;
    sSyslogListenSocket  = tThreads[TH_SYSLOG].skt;
    SyslogCreateLogFile (sSettings.szSyslogFile);
 
-   tThreads [TH_SYSLOG].bInit = TRUE;  // inits OK
-
    while ( tThreads[TH_SYSLOG].gRunning )
    {
       nDummy = sizeof sSock;
@@ -100,35 +98,20 @@ struct S_SyslogMsg msg;
       // something received and format OK
       if (Rc>0  && CheckSyslogMsg (szSyslogBuf, Rc) )
       {
+          if (hSysLogFile != INVALID_HANDLE_VALUE)
+          {struct tm *newtime; 
+           time_t tm;
+           int Dummy;
+           char szTxt [SYSLOG_MAXMSG +1 + 30];
+                 time (&tm);    
+                 newtime = localtime (& tm);			
+	     // copy in file the string without the new-line
+                 wsprintf (szTxt, "%24.24s: %s\r\n", asctime (newtime), szSyslogBuf);
+                 WriteFile (hSysLogFile, szTxt, lstrlen (szTxt), &Dummy, NULL);
+          } // log in file
+          if (m_hPipe!=INVALID_HANDLE_VALUE) WriteFile (m_hPipe, szSyslogBuf, Rc, &nDummy, NULL);
 
-		  // who sent the UDP message
-		  getnameinfo ( (LPSOCKADDR) & sSock, sizeof sSock, 
-		                 msg.from, sizeof msg.from, 
-				         NULL, 0,
-				         NI_NUMERICHOST );          
-		  if ( sSock.ss_family == AF_INET6 
-			 && IN6_IS_ADDR_V4MAPPED ( & (* (struct sockaddr_in6 *) & sSock ).sin6_addr ) )
-          {
-		  	  memmove (msg.from, msg.from + sizeof ("::ffff:") - 1, strlen (msg.from + sizeof ("::ffff:") -1) +1 );        
-		  }
-		  msg.from[sizeof msg.from - 1] = 0; // probably paranoid
-
-
-		  if (hSysLogFile != INVALID_HANDLE_VALUE)
-		  {
-			  struct tm *newtime;
-			  time_t tm;
-			  int Dummy;
-			  char szTxt[SYSLOG_MAXMSG + 1 + 30];
-			  time(&tm);
-			  newtime = localtime(&tm);
-			  // copy in file the string without the new-line
-			  wsprintf(szTxt,"%24.24s;%s; %s\r\n",asctime(newtime),msg.from,szSyslogBuf);
-			  WriteFile(hSysLogFile, szTxt, lstrlen(szTxt), &Dummy, NULL);
-		  } // log in file
-
-		  if (m_hPipe != INVALID_HANDLE_VALUE) WriteFile(m_hPipe, szSyslogBuf, Rc, &nDummy, NULL);
-
+          lstrcpy (msg.from, inet_ntoa (sSock.sin_addr));
           lstrcpy (msg.txt, szSyslogBuf); 
           SendMsgRequest (   C_SYSLOG, 
 			               & msg, 

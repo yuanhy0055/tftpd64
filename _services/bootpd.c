@@ -33,9 +33,7 @@
 #include "threading.h"
 #include "bootpd_functions.h"
 
-#include <Mswsock.h>
 
-#define CLASS_A_LOOPBACK  127
 #define DHO_CUSTOM 254
 
 
@@ -84,7 +82,6 @@ struct S_DhcpOptions
 {
    unsigned nDHCPOpt;
    char     nLen;
-   int      nServices;
 } ; // struct S_DhcpOptions
 
 
@@ -118,8 +115,7 @@ unsigned char *p;
     for ( Ark = 0,  p =  pOpt + (sizeof DHCP_OPTIONS_COOKIE - 1)  ;
           Ark<DHCP_OPTION_LEN-3  && p[Ark]!=nField ;
           Ark += (p[Ark]==DHO_PAD ? 1 : 2+p[Ark+1]) );
-
-    if (Ark<DHCP_OPTION_LEN-3  &&  Ark+p[Ark+1] < DHCP_OPTION_LEN && p[Ark] == nField)
+    if (Ark<DHCP_OPTION_LEN-2  &&  Ark+p[Ark+1] < DHCP_OPTION_LEN )
     {
         if (pLength!=NULL)  *pLength = p[Ark+1];
         return &p[Ark+2];
@@ -291,7 +287,7 @@ int useprev = (pPreviousAddr->s_addr != INADDR_ANY) && (AddrFitsPool(pPreviousAd
     // search for an "hole" in the struct or take last elem + 1
     // if an item was allocated and the first item is the first in pool
    //Don't allocate ip addresses ending in 0 or 255
-    if (nAllocatedIP>0   &&  tFirstIP[0]->dwIP.s_addr == inet_addr (sParamDHCP.szAddr))
+    if (nAllocatedIP>0   &&  tFirstIP[0]->dwIP.s_addr == sParamDHCP.dwAddr.s_addr)
      {
           for ( Ark=1 ;
                 Ark<nAllocatedIP
@@ -299,7 +295,7 @@ int useprev = (pPreviousAddr->s_addr != INADDR_ANY) && (AddrFitsPool(pPreviousAd
                Ark ++ );
            pCurIP = DHCPReallocItem (NULL, htonl (AddrInc(tFirstIP[Ark-1]->dwIP)), pMac, nMacLen);
        }
-      else   pCurIP = DHCPReallocItem (NULL, inet_addr (sParamDHCP.szAddr), pMac, nMacLen);
+      else   pCurIP = DHCPReallocItem (NULL, sParamDHCP.dwAddr.s_addr, pMac, nMacLen);
        // New address : ntohl (tFirstIP[Ark]->dwIP.s_addr) + 1
     // it is OK if Ark has reach nAllocatedIP
       LOG (12, "Reply with new : %s", inet_ntoa (pCurIP->dwIP));
@@ -347,55 +343,31 @@ return NULL;
 } // DHCP_IPAllocate2
 
 
-struct LL_IP *DHCP_IPAllocate(int nDhcpType, struct in_addr *pPreviousAddr, const unsigned char *pMac, int nMacLen)
+struct LL_IP *DHCP_IPAllocate(struct in_addr *pPreviousAddr, const unsigned char *pMac, int nMacLen)
 {
 int Rc=1;
 struct LL_IP *pCurIP;
 ULONG dummy_mac[2];
-ULONG  dummy_maclen = sizeof dummy_mac;
-DWORD mask = inet_addr(sParamDHCP.szMask);
-BOOL  bFound=FALSE;
+int dummy_maclen = sizeof dummy_mac;
   do
   {
      pCurIP = DHCP_IPAllocate2 (pPreviousAddr, pMac, nMacLen);
-	 // 2010/09/27  Colin from Shangai points out that ICMP check should be done only for DISCOVER
-     //  if (pCurIP!=NULL  &&  sSettings.bPing  && nDhcpType==DHCPDISCOVER)
-     if (pCurIP==NULL  ||  ! sSettings.bPing  ||  nDhcpType!=DHCPDISCOVER)  
-		 bFound=TRUE;
-	 else
+     if (pCurIP!=NULL  &&  sSettings.bPing)
      {
-	   
-       // frees the ARP cache and send an ARP request 
-	   // nov 2013 : ping has been suppressed, trust ARP alone
-	   if  (FindNearestServerAddress ( (struct in_addr *) & pCurIP->dwIP, (struct in_addr *) & mask, TRUE) != NULL)
-	   {
-		   // same network 
-			ArpDeleteHost (pCurIP->dwIP);
-			Rc = SendARP(pCurIP->dwIP.s_addr, 0, dummy_mac, &dummy_maclen);
-			if (Rc == NO_ERROR)
-		    {
-			   LOG (2, "Suppress arp-able address %s", inet_ntoa (pCurIP->dwIP));
-			   DHCPReallocItem (pCurIP, pCurIP->dwIP.s_addr, FREE_DHCP_ADDRESS, 6);
-			   SetRenewTime (pCurIP);
-		    }
-			else bFound=TRUE;
-	   }
-	   else
-	   {
-		    Rc =    PingApi (&pCurIP->dwIP, DHCP_PINGTIMEOUT, NULL) ;
-		    if (Rc>0)
-		    {
-		 	   LOG (2, "Suppress pingable address %s", inet_ntoa (pCurIP->dwIP));
-	 		   DHCPReallocItem (pCurIP, pCurIP->dwIP.s_addr, FREE_DHCP_ADDRESS, 6);
-			   SetRenewTime (pCurIP);
-		    }
-		    else if (Rc==PINGAPI_TIMEOUT  ||  Rc==PINGAPI_UNREACHABLE  ||  Rc==PINGAPI_TTLEXPIRE) 
-					bFound=TRUE;
-		    else { LOG (1, "Ping Error %d (%s)", WSAGetLastError (), LastErrorText() ); Sleep (100); bFound=TRUE; }
-	   } // different network use ping instead of ARP
+       // Send an ARP request --> frees the ARP cache
+       SendARP(pCurIP->dwIP.s_addr, 0, dummy_mac, &dummy_maclen);
+       Rc =    PingApi (&pCurIP->dwIP, DHCP_PINGTIMEOUT, NULL)==PINGAPI_TIMEOUT
+            && PingApi (&pCurIP->dwIP, DHCP_PINGTIMEOUT, NULL)==PINGAPI_TIMEOUT
+            && PingApi (&pCurIP->dwIP, DHCP_PINGTIMEOUT, NULL)==PINGAPI_TIMEOUT ;
+       if (!Rc)
+       {
+          LOG (2, "Suppress pingable address %s", inet_ntoa (pCurIP->dwIP));
+          DHCPReallocItem (pCurIP, pCurIP->dwIP.s_addr, FREE_DHCP_ADDRESS, 6);
+          SetRenewTime (pCurIP);
+       }
      } // bPing Settings
   } 
-  while (pCurIP!=NULL && ! bFound); // should exit by bFound
+  while (pCurIP!=NULL  &&  !Rc);
 return pCurIP;
 }
 
@@ -407,114 +379,54 @@ int DHCPOptionsReply (struct dhcp_packet  *pDhcpPkt, int nDhcpType)
 unsigned char  *pOpt = (unsigned char *) (pDhcpPkt->options + (sizeof DHCP_OPTIONS_COOKIE - 1));
 HANDLE            hFile;
 struct in_addr *pNearest;
-struct in_addr  in_Aux;
 int             Ark, Evan;
 char            sz[256];
-unsigned char  *p;
-unsigned char  szDhcpAgentOpt[1024];
-int				nDhcpAgentOpt=0;
-unsigned char  *pSub82;
-unsigned char szDhcpAgentOptSub1[128],szDhcpAgentOptSub2[128];
-
 static struct S_DhcpOptions sDhcpOpt [] =       // 0 for unspecified
 {
-    DHO_DHCP_MESSAGE_TYPE,      1,	  ~TFTPD32_NONE,
-    DHO_DHCP_SERVER_IDENTIFIER, 4,	  ~TFTPD32_NONE,
-    DHO_SUBNET_MASK,            4,	  ~TFTPD32_NONE,
-    DHO_ROUTERS,                4,	  ~TFTPD32_NONE,
-    DHO_DOMAIN_NAME_SERVERS,    0,	  ~TFTPD32_NONE,
-    DHO_NETBIOS_NAME_SERVERS,   0,	  ~TFTPD32_NONE,
-    DHO_DHCP_LEASE_TIME,        4,	  ~TFTPD32_NONE,
-    DHO_DHCP_RENEWAL_TIME,      4,	  ~TFTPD32_NONE,
-    DHO_DHCP_REBINDING_TIME,    4,	  ~TFTPD32_NONE,
-    DHO_LOG_SERVERS,            4,	   TFTPD32_SYSLOG_SERVER,
-	DHO_NTP_SERVERS,			0,	  ~TFTPD32_NONE,
-	DHO_SIP_SERVERS,			0,	  ~TFTPD32_NONE,
-    DHO_BOOT_SIZE,              0,	   TFTPD32_TFTP_SERVER,
-	DHO_TFTP_SERVER,			0,     TFTPD32_TFTP_SERVER,
-    DHO_DOMAIN_NAME,            0,	  ~TFTPD32_NONE,
-    DHO_DHCP_AGENT_OPTIONS,     0,	  ~TFTPD32_NONE,
-    DHO_CUSTOM,                 0,	  ~TFTPD32_NONE,
-    DHO_END,                    0,	  ~TFTPD32_NONE,
+    DHO_DHCP_MESSAGE_TYPE,      1,
+    DHO_DHCP_SERVER_IDENTIFIER, 4,
+    DHO_SUBNET_MASK,            4,
+    DHO_ROUTERS,                4,
+    DHO_DOMAIN_NAME_SERVERS,    4,
+    DHO_LOG_SERVERS,            4,
+    DHO_NETBIOS_NAME_SERVERS,   4,
+    DHO_DHCP_LEASE_TIME,        4,
+    DHO_DHCP_RENEWAL_TIME,      4,
+    DHO_DHCP_REBINDING_TIME,    4,
+    DHO_BOOT_SIZE,              0,
+    DHO_DOMAIN_NAME,            0,
+    DHO_CUSTOM,                 0,
+    DHO_END,                    0,
 };
-
-// Save Agent Options
-       p = DHCPSearchOptionsField (pDhcpPkt->options, DHO_DHCP_AGENT_OPTIONS, NULL);
-       if (p!=NULL)   
-	   {
-		   p--;
-		   nDhcpAgentOpt = *p;
-           memcpy (szDhcpAgentOpt, p+1,  nDhcpAgentOpt);
-	   }
 
 	//Always pack the magic cookie again, just in case it was corrupted
 	*(DWORD*)(pDhcpPkt->options) = * (DWORD*) DHCP_OPTIONS_COOKIE;
 
-	// pNearest points on the "good" LAN interface
-//   pNearest = FindNearestServerAddress (&pDhcpPkt->yiaddr, & sParamDHCP.dwMask, FALSE);
-   in_Aux.s_addr=inet_addr(sParamDHCP.szMask);
-   pNearest = FindNearestServerAddress (&pDhcpPkt->yiaddr, & in_Aux, FALSE);
+   pNearest = FindNearestServerAddress (&pDhcpPkt->yiaddr, & sParamDHCP.dwMask, FALSE);
    //HACK -- If we are the bootp server, we are also the tftpserver
    if (sSettings.uServices & TFTPD32_TFTP_SERVER) 
       pDhcpPkt->siaddr = *pNearest;   // Next server (TFTP server is enabled)
-   pDhcpPkt->siaddr = *pNearest;   // always fill siaddr
    for (Ark=0 ; Ark<SizeOfTab(sDhcpOpt) ; Ark++)
    {
-	 // skip if linked to a service which is not started (change suggested by Colin)
-	 if (! (sSettings.uServices & sDhcpOpt[Ark].nServices)) 
-			continue;
-
      if (sDhcpOpt[Ark].nLen!=0) 
      {
         *pOpt++ = (unsigned char) sDhcpOpt[Ark].nDHCPOpt ; 
         *pOpt++ = (unsigned char) sDhcpOpt[Ark].nLen;
-     }
-     switch (sDhcpOpt[Ark].nDHCPOpt)
-     {
-     case DHO_DHCP_MESSAGE_TYPE       :  * pOpt = (unsigned char) nDhcpType ; break ; 
-     case DHO_LOG_SERVERS             :  // fallthrough
-     case DHO_DHCP_SERVER_IDENTIFIER  :  * (DWORD *) pOpt = pNearest->s_addr; break ;
-	 case DHO_TFTP_SERVER             :  
-                  *pOpt++ = DHO_TFTP_SERVER;
-				  *pOpt   = lstrlen (sSettings.szTftpLocalIP[0]!=0 ? sSettings.szTftpLocalIP : inet_ntoa (* pNearest) );
-                   memcpy (pOpt+1, sSettings.szTftpLocalIP[0]!=0 ? sSettings.szTftpLocalIP : inet_ntoa (* pNearest), *pOpt);
-                   pOpt += 1+*pOpt; 
-				   break;
-
-     case DHO_SUBNET_MASK             :  * (DWORD *) pOpt = inet_addr(sParamDHCP.szMask); break ;
-//       case DHO_ROUTERS                 :  * (DWORD *) pOpt = (sParamDHCP.dwGateway.s_addr == 0xffffffff ? pDhcpPkt->yiaddr.s_addr : sParamDHCP.dwGateway.s_addr); break ;
-     case DHO_ROUTERS                 : 
-		   if ((strlen(sParamDHCP.szGateway)==0 || inet_addr (sParamDHCP.szGateway)==0x0 ))
-			* (DWORD *) pOpt = pDhcpPkt->yiaddr.s_addr ;
-		   else
-			* (DWORD *) pOpt = inet_addr(sParamDHCP.szGateway); 
-		   break ;
-//       case DHO_DOMAIN_NAME_SERVERS     :  * (DWORD *) pOpt = sParamDHCP.dwDns.s_addr;  break; 
-	 case DHO_DOMAIN_NAME_SERVERS: 
-
-			if ( (strlen(sParamDHCP.szDns1)!=0  &&  inet_addr (sParamDHCP.szDns1)!=0x0) )
-			{
-				BOOL bkp_dns = (strlen(sParamDHCP.szDns2)!=0  &&  inet_addr (sParamDHCP.szDns2)!=0x0);
-                  *pOpt++ = DHO_DOMAIN_NAME_SERVERS;
-                  *pOpt++ = bkp_dns ? 8 : 4;
-				  * (DWORD *) pOpt = inet_addr (sParamDHCP.szDns1);
-				  if (bkp_dns) * (DWORD *) (pOpt+4) = inet_addr (sParamDHCP.szDns2);
-				   pOpt += bkp_dns ? 8 : 4;
-            }
-            break;		   
-     case DHO_NETBIOS_NAME_SERVERS    :
-			if (!(strlen(sParamDHCP.szWins)==0 || inet_addr (sParamDHCP.szWins)==0x0))
-            {
-                  *pOpt++ = DHO_NETBIOS_NAME_SERVERS;
-                  *pOpt++ = 4;
-				  * (DWORD *) pOpt = inet_addr (sParamDHCP.szWins);
-				   pOpt += 4;
-            }
-            break;
-     case DHO_DHCP_LEASE_TIME         :  * (DWORD *) pOpt = htonl (sParamDHCP.nLease * 60);  break ;
-     case DHO_DHCP_RENEWAL_TIME       :  * (DWORD *) pOpt = htonl (sParamDHCP.nLease/2 * 60);  break ;
-     case DHO_DHCP_REBINDING_TIME     :  * (DWORD *) pOpt = htonl ((sParamDHCP.nLease*80)/100 * 60);  break ;
-     case DHO_BOOT_SIZE               :
+      }
+      switch (sDhcpOpt[Ark].nDHCPOpt)
+      {
+       case DHO_DHCP_MESSAGE_TYPE       :  * pOpt = (unsigned char) nDhcpType ; break ; 
+       case DHO_LOG_SERVERS             :  if (! (sSettings.uServices & TFTPD32_SYSLOG_SERVER) ) break;
+                                           // else fallthrough
+       case DHO_DHCP_SERVER_IDENTIFIER  :  * (DWORD *) pOpt = pNearest->s_addr; break ;
+       case DHO_SUBNET_MASK             :  * (DWORD *) pOpt = sParamDHCP.dwMask.s_addr; break ;
+       case DHO_ROUTERS                 :  * (DWORD *) pOpt = (sParamDHCP.dwGateway.s_addr == 0xffffffff ? pDhcpPkt->yiaddr.s_addr : sParamDHCP.dwGateway.s_addr); break ;
+       case DHO_NETBIOS_NAME_SERVERS    :
+       case DHO_DOMAIN_NAME_SERVERS     :  * (DWORD *) pOpt = sParamDHCP.dwDns.s_addr;  break; 
+       case DHO_DHCP_LEASE_TIME         :  * (DWORD *) pOpt = htonl (sParamDHCP.nLease * 60);  break ;
+       case DHO_DHCP_RENEWAL_TIME       :
+       case DHO_DHCP_REBINDING_TIME     :  * (DWORD *) pOpt = htonl (sParamDHCP.nLease/2 * 60);  break ;
+       case DHO_BOOT_SIZE               :
               // translate $IP$ and $MAC$ from boot file name
               TranslateExp (sParamDHCP.szBootFile, sz, pDhcpPkt->yiaddr, pDhcpPkt->chaddr);
               hFile = CreateFile(sz,        // open the file
@@ -533,26 +445,7 @@ static struct S_DhcpOptions sDhcpOpt [] =       // 0 for unspecified
                   CloseHandle( hFile ) ;         // close the file
                }
               break;
-     case DHO_NTP_SERVERS             :
-		if (!(strlen(sParamDHCP.szOpt42)==0 || inet_addr (sParamDHCP.szOpt42)==0x0))
-             {
-                  *pOpt++ = DHO_NTP_SERVERS;
-                  *pOpt++ = 4;
-				  * (DWORD *) pOpt = inet_addr (sParamDHCP.szOpt42);
-				   pOpt += 4;
-             }
-             break;
-     case DHO_SIP_SERVERS             :
-		if (!(strlen(sParamDHCP.szOpt120)==0 || inet_addr (sParamDHCP.szOpt120)==0x0))
-             {
-                  *pOpt++ = DHO_SIP_SERVERS;
-                  *pOpt++ = 5;
-				  *pOpt++ = 1;
-				  * (DWORD *) pOpt = inet_addr (sParamDHCP.szOpt120);
-				   pOpt += 4;
-             }
-             break;
-     case DHO_DOMAIN_NAME             :
+        case DHO_DOMAIN_NAME             :
              if (sParamDHCP.szDomainName[0]!=0)
              {
                   *pOpt++ = DHO_DOMAIN_NAME;
@@ -561,35 +454,6 @@ static struct S_DhcpOptions sDhcpOpt [] =       // 0 for unspecified
                    pOpt += 1+*pOpt; 
               }
               break;
-     case DHO_DHCP_AGENT_OPTIONS       :
-             if (nDhcpAgentOpt!=0)
-             {
-                 *pOpt++ = DHO_DHCP_AGENT_OPTIONS;
-                 *pOpt++ = nDhcpAgentOpt;
-                  memcpy (pOpt, szDhcpAgentOpt, nDhcpAgentOpt);
-                  pOpt += nDhcpAgentOpt; 
-				  pSub82=szDhcpAgentOpt;
-				  szDhcpAgentOptSub1[0]=szDhcpAgentOptSub2[0]=0;
-				  while (pSub82!=NULL && pSub82 < szDhcpAgentOpt+nDhcpAgentOpt-2)
-				  {
-					 if (pSub82[0]==0x01 && pSub82[1] < 127)
-					 {
-						memcpy (szDhcpAgentOptSub1, pSub82+2, pSub82[1]);
-						szDhcpAgentOptSub1[pSub82[1]]=0;
-						pSub82+=pSub82[1]+2;
-					 }
-					 else if (pSub82[0]==0x02 && pSub82[1] < 127)
-					 {
-						memcpy (szDhcpAgentOptSub2, pSub82+2, pSub82[1]);
-						szDhcpAgentOptSub2[pSub82[1]]=0;
-						pSub82+=pSub82[1]+2;
-					 }
-					 else pSub82=NULL;
-				  }
-				  LOG (5, "Adding option 82, length: %d ; CirID: <%s>; RemID: <%s>; ",
-					  nDhcpAgentOpt, szDhcpAgentOptSub1,szDhcpAgentOptSub2);
-             }
-             break;
      case DHO_CUSTOM : // Manage custom options
          for (Evan=0 ; Evan < SizeOfTab (sParamDHCP.t) ; Evan++)
                 if (sParamDHCP.t[Evan].nAddOption != 0)
@@ -601,10 +465,10 @@ static struct S_DhcpOptions sDhcpOpt [] =       // 0 for unspecified
               break;
      case DHO_END                     : 
                  *pOpt++ = DHO_END;
- //              *pOpt++ = DHO_PAD;
- //              *pOpt++ = DHO_PAD;
+                 *pOpt++ = DHO_PAD;
+                 *pOpt++ = DHO_PAD;
                  break;
-     } // switch option
+       } // switch option
      pOpt += sDhcpOpt[Ark].nLen ;    // points on next field
    } // for all option
 
@@ -615,13 +479,12 @@ return (int) (pOpt - (unsigned char*) pDhcpPkt);
 ///////////
 // Process DHCP msg : return TRUE if an answer has been prepared
 
-int iCounterDHCP=0;
 int ProcessDHCPMessage (struct dhcp_packet *pDhcpPkt, int *pSize)
 {
-unsigned char *p=NULL;
-struct LL_IP  *pCurIP=NULL, *pProposedIP=NULL;	// Thanks Sam Leitch !
+unsigned char *p;
+struct LL_IP  *pCurIP, *pProposedIP;
 int            Ark, nDhcpType = 0;
-struct in_addr in_RequestedAddr;
+struct in_addr sRequestedAddr;
 DWORD sStaticIP;
 
     if (IsDHCP (*pDhcpPkt))
@@ -653,7 +516,6 @@ DWORD sStaticIP;
             }
         case DHCPDISCOVER :
             sStaticIP = DHCP_StaticAssignation (pDhcpPkt);
-			in_RequestedAddr.s_addr=pDhcpPkt->ciaddr.s_addr;
 			if (sStaticIP != INADDR_NONE)
 			{
                LOG (0, "%s: statically assigned to address %s", 
@@ -666,11 +528,10 @@ DWORD sStaticIP;
                p  = DHCPSearchOptionsField (pDhcpPkt->options, DHO_DHCP_REQUESTED_ADDRESS, NULL);
                if (p!=NULL)
               {
-// Change to avoid ciaddr to be returned if not comming. ciaddr returned will be the received one
-				   in_RequestedAddr = * (struct in_addr *) p;
-                   LOG (5, "Client requested address %s", inet_ntoa (in_RequestedAddr));
+                   pDhcpPkt->ciaddr = * (struct in_addr *) p;
+                   LOG (5, "Client requested address %s", inet_ntoa (pDhcpPkt->ciaddr));
               }
-              pProposedIP  = DHCP_IPAllocate (nDhcpType, & in_RequestedAddr, pDhcpPkt->chaddr, pDhcpPkt->hlen);
+              pProposedIP  = DHCP_IPAllocate (& pDhcpPkt->ciaddr, pDhcpPkt->chaddr, pDhcpPkt->hlen);
               if (pProposedIP == NULL)
               {
                   LOG (1, "no more address or address previously allocated by another server");
@@ -678,15 +539,15 @@ DWORD sStaticIP;
               }
               pDhcpPkt->yiaddr.s_addr = pProposedIP->dwIP.s_addr;
               LOG (2, "%s: proposed address %s", IsDHCP(*pDhcpPkt) ? "DHCP" : "BOOTP", inet_ntoa (pProposedIP->dwIP) );
-			  iCounterDHCP=0;
-              //If this is a bootp, there is no other response from the client.  
-              //Since we don't want leases expiring (or being mistaken for unAcked DHCP offers),
-              //set renewed to a distant time
-              if(nDhcpType == 0  &&  sStaticIP == INADDR_NONE)     // patched by Rolf Offermanns
-                  ForceRenewTime(pProposedIP, 0x66666666);         // fixed by Sam Leitch
             } // dynamically assigned address
 
-            // populate the packet to be returned
+            //If this is a bootp, there is no other response from the client.  
+            //Since we don't want leases expiring (or being mistaken for unAcked DHCP offers),
+            //set renewed to a distant time
+            if(nDhcpType == 0)
+               ForceRenewTime(pProposedIP, 0x66666666);         
+
+             // populate the packet to be returned
             pDhcpPkt->op = BOOTREPLY;
             // translate $IP$ and $MAC$ from boot file name
             TranslateExp (sParamDHCP.szBootFile, pDhcpPkt->file, pDhcpPkt->yiaddr, pDhcpPkt->chaddr);
@@ -712,39 +573,29 @@ DWORD sStaticIP;
 			}
 
            // has tftpd32 dinamically assigned this address
-			pCurIP = DHCPSearchByMacAddress (pDhcpPkt->chaddr, pDhcpPkt->hlen);
-			if (pCurIP==NULL)  return FALSE; // not attributed by Tftpd32 --> do not answer
-
-			// ok we have proposed an IP address for this MAC Address, 
-			// but does the client request for our assignation 
-			// look either at the field ciaddr or at the DHO_DHCP_REQUESTED_ADDRESS option
-
-            // search field REQUEST ADDR in options
+           pCurIP = DHCPSearchByMacAddress (pDhcpPkt->chaddr, pDhcpPkt->hlen);
+           if (pCurIP==NULL)  return FALSE; // not attributed by Tftpd32 --> do not answer
+           // search field REQUEST ADDR in options
             // if specified should fit database
-			in_RequestedAddr.s_addr= pDhcpPkt->ciaddr.s_addr;
 			p  = DHCPSearchOptionsField (pDhcpPkt->options, DHO_DHCP_REQUESTED_ADDRESS, NULL);
             if (p!=NULL)
 			{
-// Change to avoid ciaddr to be returned if not comming. ciaddr returned will be the received one
-//				pDhcpPkt->ciaddr = * (struct in_addr *) p;
-				in_RequestedAddr = * (struct in_addr *) p;
+				pDhcpPkt->ciaddr = * (struct in_addr *) p;
 			}
-//			if(AddrFitsPool(&pDhcpPkt->ciaddr))
-			if(AddrFitsPool(&in_RequestedAddr))
+
+			if(AddrFitsPool(&pDhcpPkt->ciaddr))
 			{
 				//Look up the address, if it's not found, or the owner is this macaddr,
 				//or the lease was expired, allow the serving.
 				BOOL wasexpired = FALSE;
-//				pProposedIP = DHCPSearchByIP(&pDhcpPkt->ciaddr, &wasexpired);
-				pProposedIP = DHCPSearchByIP(&in_RequestedAddr, &wasexpired);
+				pProposedIP = DHCPSearchByIP(&pDhcpPkt->ciaddr, &wasexpired);
 				bSERVER = !pProposedIP || wasexpired || (0 == memcmp(pProposedIP->sMacAddr, pDhcpPkt->chaddr, 6));
 			}
 
-			if (bSERVER  ||  (pDhcpPkt->ciaddr.S_un.S_addr==0 && sSettings.bPXECompatibility) )
+			if (bSERVER)
 			{
 
-//				pProposedIP  = DHCP_IPAllocate (nDhcpType, & pDhcpPkt->ciaddr, pDhcpPkt->chaddr, pDhcpPkt->hlen);
-				pProposedIP  = DHCP_IPAllocate (nDhcpType, & in_RequestedAddr, pDhcpPkt->chaddr, pDhcpPkt->hlen);
+				pProposedIP  = DHCP_IPAllocate (& pDhcpPkt->ciaddr, pDhcpPkt->chaddr, pDhcpPkt->hlen);
 				if (pProposedIP == NULL)
 				{
 					  LOG (1, "no more addresses or address previously allocated by another server");
@@ -756,13 +607,13 @@ DWORD sStaticIP;
 				// populate the packet to be returned
 				pDhcpPkt->op = BOOTREPLY;
 				pDhcpPkt->yiaddr.s_addr = pProposedIP->dwIP.s_addr;
-				TranslateExp (sParamDHCP.szBootFile, pDhcpPkt->file, pDhcpPkt->yiaddr, pDhcpPkt->chaddr);
+                TranslateExp (sParamDHCP.szBootFile, pDhcpPkt->file, pDhcpPkt->yiaddr, pDhcpPkt->chaddr);
 				*pSize = DHCPOptionsReply (pDhcpPkt, DHCPACK);
 			}
 			else
 			{
 				LOG (5, "Client requested address %s which was not allocated by tftpd32 and is either outside our pool or is used by someone else",
-							  inet_ntoa (in_RequestedAddr) );
+							  inet_ntoa (pDhcpPkt->ciaddr) );
 				return FALSE ; // do not answer
  			}
            } // Block for bSERVER declaration
@@ -777,8 +628,8 @@ DWORD sStaticIP;
              p  = DHCPSearchOptionsField (pDhcpPkt->options, DHO_DHCP_REQUESTED_ADDRESS, NULL);
              if (p!=NULL) 
               {
-                 in_RequestedAddr.s_addr = * (DWORD *) p;
-                 if ( pCurIP->dwIP.s_addr==in_RequestedAddr.s_addr) 
+                 sRequestedAddr.s_addr = * (DWORD *) p;
+                 if ( pCurIP->dwIP.s_addr==sRequestedAddr.s_addr) 
                  {
                      DHCPDestroyItem (pCurIP);
                      LOG (5, "item destroyed");
@@ -800,7 +651,7 @@ DWORD sStaticIP;
 
 			 if(NO_ERROR == SendARP(pDhcpPkt->ciaddr.s_addr, 0, mac, &maclen))
 			 {
-				pProposedIP  = DHCP_IPAllocate (nDhcpType, & pDhcpPkt->ciaddr, (unsigned char*)mac, maclen);
+				pProposedIP  = DHCP_IPAllocate (& pDhcpPkt->ciaddr, (unsigned char*)mac, maclen);
 				if (pProposedIP)
 				{
 					if (pProposedIP->tAllocated==0) SetAllocTime(pProposedIP);
@@ -850,7 +701,7 @@ void ArpAndAdd (struct in_addr *paddr)
 
 	 if(NO_ERROR == SendARP(paddr->s_addr, 0, mac, &maclen))
 	 {
-		struct LL_IP* pProposedIP  = DHCP_IPAllocate (DHCPDISCOVER, paddr, (unsigned char*)mac, maclen);
+		struct LL_IP* pProposedIP  = DHCP_IPAllocate (paddr, (unsigned char*)mac, maclen);
 		if (pProposedIP)
 		{
 			if (pProposedIP->tAllocated==0) SetAllocTime(pProposedIP);
@@ -960,209 +811,6 @@ void PingRange(struct in_addr* pstart, DWORD count)
 }
 
 
-// ---------------------------------
-// send the answer using broadcast and the source address specified into siaddr files
-// PJO : Nov 2013
-
-int DHCPSingleSend (SOCKET sDHCPskt, struct sockaddr_in *pTo, struct dhcp_packet *pDhcpPkt, int nSize, BOOL bUniCast)
-{
-int Rc;
-struct servent *lpServEnt;
-int save_port = pTo->sin_port;
-    // really simple if DHCP bound to one address : use it for answer
-	// if no source address was specified in the incoming request reply with a broadcast
-	if (!bUniCast)
-		pTo->sin_addr.s_addr = htonl (INADDR_BROADCAST);	// broadcast
-
-	// answer to incoming port (67 or 68)
-	Rc = sendto ( sDHCPskt,
-			  		(char *) pDhcpPkt,
-					nSize,
-					0,
-					(struct sockaddr *) pTo,
-					sizeof *pTo);
-	LOG (15, "Thread 0x%X: send %d bytes", GetCurrentThreadId(), nSize );
-	if (Rc<nSize)
-		LOG (1, "sendto error %d: %s", GetLastError(), LastErrorText ());
-
-	if (     sSettings.bDoubleAnswer 
-		 &&  (pDhcpPkt->giaddr.s_addr!=htonl(INADDR_ANY)  || pDhcpPkt->giaddr.s_addr!=htonl(INADDR_BROADCAST)) 
-		)
-		{
-			lpServEnt = getservbyname ("bootpc", "udp") ;
-			// duplicates answer to sends to port bootps
-			pTo->sin_port =  (lpServEnt != NULL) ?  lpServEnt->s_port : htons (BOOTPC_PORT);
-			Rc = sendto ( sDHCPskt,
-						 (char *) pDhcpPkt,
-						  nSize,
-						  0,
-						 (struct sockaddr *) pTo,
-						  sizeof *pTo);
-			pTo->sin_port = save_port;
-	} // double answer for relay
-return Rc;
-}  // DHCPSingleSend
-
-
-// Do what Windows should have done : send the broadcast 
-int DHCPSendFrom (struct sockaddr_in *pFrom, struct sockaddr_in *pTo, struct dhcp_packet *pDhcpPkt, int nSize)
-{
-SOCKET snd;
-int True = TRUE;
-int Rc;
-struct servent *lpServEnt;
-int save_port = pTo->sin_port;
-
-
-	// create new socket
-	snd = socket(AF_INET, SOCK_DGRAM, 0);
-	if (snd == INVALID_SOCKET)
-	{
-		Rc = WSAGetLastError ();
-		return -1;
-	}
-	Rc = setsockopt (snd, SOL_SOCKET, SO_REUSEADDR, (const char *) & True, sizeof True);
-
-	lpServEnt = getservbyname ("bootps", "udp") ;
-	pFrom->sin_port = (lpServEnt != NULL) ?  lpServEnt->s_port : htons (BOOTPS_PORT);
-	// bind it with info provided by getaddrinfo (specify source interface and source port)
-	Rc = bind(snd, (struct sockaddr *) pFrom, sizeof *pFrom);
-	if (Rc==-1)
-	{
-		Rc = WSAGetLastError ();
-		closesocket (snd);
-		return -1;
-	}
-	// add broadcast permission to socket
-	Rc = setsockopt (snd, SOL_SOCKET, SO_BROADCAST, (char *) & True, sizeof True);
-	if (Rc==-1)
-	{
-		Rc = WSAGetLastError ();
-		closesocket (snd);
-		return -1;
-	}
-
-	pTo->sin_addr.s_addr = htonl (INADDR_BROADCAST);	// broadcast
-	// answer to incoming port (67 or 68)
-	Rc = sendto ( snd,
-			  	(char *) pDhcpPkt,
-				 nSize,
-				 0,
-				(struct sockaddr *) pTo,
-				 sizeof *pTo);
-	LOG (15, "Thread 0x%X: send %d bytes", GetCurrentThreadId(), nSize );
-	if (Rc<nSize)
-		LOG (1, "sendto error %d: %s", GetLastError(), LastErrorText ());
-
-	// Added : DHCP relay detection --> send replies to port 67 and 68
-	// Colin and others point ourt that this is wrong. I guess they are right.
-	// However it should not be an issue and i am sure that the host receive an address !
-	// Added a setting for this hack
-	if (sSettings.bDoubleAnswer && 
-	(pDhcpPkt->giaddr.s_addr!=htonl(INADDR_ANY)  || pDhcpPkt->giaddr.s_addr!=htonl(INADDR_BROADCAST)))
-	{
-		// duplicates answer to sends to port bootps
-		lpServEnt = getservbyname ("bootps", "udp") ;
-		pTo->sin_port =  (lpServEnt != NULL) ?  lpServEnt->s_port : htons (BOOTPC_PORT);
-		Rc = sendto ( snd,
-						(char *) pDhcpPkt,
-						nSize,
-						0,
-						(struct sockaddr *) pTo,
-						sizeof *pTo);
-		pTo->sin_port = save_port;
-	}
-	closesocket (snd);
-return Rc;
-}
-
-
-
-
-// recv a broadcast and note the address of the interface which has received the broadcast
-int SktRcvAndGetAddrOfIncomingIf (SOCKET skt, char *buf, int bufsize, struct sockaddr_in *from, struct sockaddr_in *to)
-{ 
-GUID WSARecvMsg_GUID = WSAID_WSARECVMSG;
-static LPFN_WSARECVMSG WSARecvMsg;
-WSABUF wsaBuf;
-WSAMSG wsaMsg;
-DWORD BytesRecv=-1, NumberOfBytes = 0;
-DWORD Flags = 0;
-char ControlBuffer[1024];
-WSACMSGHDR *pMsgHdr;
-IN_PKTINFO *pPktInfo;
-ULONG outBufLen;
-IP_ADAPTER_ADDRESSES       *pAddresses=NULL, *pCurrAddresses;
-int Rc;
-
-	memset (to, 0, sizeof *to);
-	// first get pointer on WSARecvMsg call
-    if (WSARecvMsg==NULL)
-	{
-		Rc = WSAIoctl( tThreads[TH_DHCP].skt, SIO_GET_EXTENSION_FUNCTION_POINTER,
-					   & WSARecvMsg_GUID, sizeof WSARecvMsg_GUID,
-					   & WSARecvMsg, sizeof WSARecvMsg,
-					   & NumberOfBytes, NULL, NULL);
-		if (Rc==-1) { SetLastError (WSAVERNOTSUPPORTED); return -1; }
-	}
-
-	//-----------------------------------------------
-	// Call the WSARecvMsg function to receive datagrams
-	// on the bound socket.
-	wsaBuf.len = bufsize;
-	wsaBuf.buf = buf;
-	wsaMsg.name = (LPSOCKADDR) from;
-	wsaMsg.namelen = sizeof *from;
-	wsaMsg.lpBuffers = & wsaBuf;
-	wsaMsg.dwBufferCount = 1;
-	wsaMsg.Control.len = sizeof ControlBuffer;
-	wsaMsg.Control.buf = ControlBuffer;
-	wsaMsg.dwFlags = 0;
-	Rc = WSARecvMsg  (skt, &wsaMsg, &BytesRecv, NULL, NULL);
-	if (Rc == SOCKET_ERROR) {
-		Rc = WSAGetLastError();
-		return -1;
-	}
-
-	// ok WSARecvMsg has succeeded, IP_PKINFO should be available in the headers
-	pMsgHdr = WSA_CMSG_FIRSTHDR(&wsaMsg);
-	for( pMsgHdr = WSA_CMSG_FIRSTHDR( &wsaMsg ); 
-		 pMsgHdr!=NULL  &&  pMsgHdr->cmsg_type!=IP_PKTINFO; 
-		 pMsgHdr = WSA_CMSG_NXTHDR( &wsaMsg, pMsgHdr  ) )	;
-
-	// not found (?)
-	if (pMsgHdr==NULL)  return BytesRecv;
-
-	pPktInfo = (IN_PKTINFO *)WSA_CMSG_DATA(pMsgHdr);
-
-	// now search in the interfaces list, GetAdaptersAddresses called twice : one to have the size to be allocated
-	pAddresses = NULL;
-	outBufLen = 0;
-	Rc = GetAdaptersAddresses ( AF_INET, 
-								GAA_FLAG_INCLUDE_PREFIX | GAA_FLAG_SKIP_MULTICAST, 
-								NULL, 
-								pAddresses, 
-								& outBufLen);
-	if (Rc==ERROR_BUFFER_OVERFLOW)
-		pAddresses = (IP_ADAPTER_ADDRESSES *) malloc (outBufLen);
-	Rc = GetAdaptersAddresses (AF_INET, 
-								GAA_FLAG_INCLUDE_PREFIX | GAA_FLAG_SKIP_MULTICAST, 
-								NULL, 
-								pAddresses, 
-								& outBufLen);
-	if (Rc == NO_ERROR) 
-	{
-		// parse all interfaces until match pPktInfo->ipi_ifindex
-		for ( pCurrAddresses = pAddresses ;
-				pCurrAddresses != NULL && pCurrAddresses->IfIndex!=pPktInfo->ipi_ifindex; 
-				pCurrAddresses=pCurrAddresses->Next ) ;
-		if (pCurrAddresses!=NULL) 
-			* to =  * (struct sockaddr_in *) pCurrAddresses->FirstUnicastAddress->Address.lpSockaddr;
-		free (pAddresses);
-	}
-return BytesRecv;
-} // SktRcvAndGetAddrOfIncomingIf
-
 
 // /////////////////////
 // DHCP Thread
@@ -1173,23 +821,22 @@ void ListenDhcpMessage (void *lpVoid)
 struct dhcp_packet      sDhcpPkt;
 char szHostname [128], *p;
 int                     Rc, nSize;
-struct S_WorkerParam   *pParam = (struct S_WorkerParam *) lpVoid;
-struct sockaddr_in      SockFrom, SockTo;
-int                     True=TRUE, nFromLen = sizeof SockFrom;
+struct S_WorkerParam   *pParam = lpVoid;
+struct sockaddr_in      SockFrom;
+int                     nFromLen = sizeof SockFrom;
 BOOL                    bUniCast;
+int True = 1;
 
     DHCPReadConfig ();
-	tThreads[TH_DHCP].bInit = TRUE;		// inits OK
-
-	// let the GUI start
     Sleep (1000);
-
+    
 	 //NJW Prompt to see if we should discover via ping before we start doing DHCP
 	 if(scanforleases)
 // && IDYES == CMsgBox(pParam->hWnd, "Should I reset the lease file and rediscover devices?", "Discover Devices", MB_YESNO))
 	 {
 		struct in_addr addr;
 		int count;
+		SetHourglass(TRUE);
 		ReadKey(TFTPD32_DHCP_KEY, KEY_DHCP_POOL, & addr.s_addr, sizeof(addr.s_addr), REG_DWORD, szTftpd32IniFile);
 		ReadKey(TFTPD32_DHCP_KEY, KEY_DHCP_POOLSIZE, &count, sizeof(count), REG_DWORD, szTftpd32IniFile);
 		SetNumAllocated(0);
@@ -1197,50 +844,31 @@ BOOL                    bUniCast;
 		if (sSettings.bPersLeases)  LoadLeases ();
 		if (sSettings.bPing)        PingRange (&addr, count);
 		// DHCPSaveConfig ();
+		SetHourglass(FALSE);
 		SVC_WARNING ("Lease file updated.\nDiscover Devices");
 	 }
 
-    // add send broadcast capacity to DHCP listening socket 
-    Rc =    setsockopt (tThreads[TH_DHCP].skt, SOL_SOCKET, SO_BROADCAST, (const char *) & True, sizeof True)==0
-		&&  setsockopt (tThreads[TH_DHCP].skt, IPPROTO_IP, IP_RECEIVE_BROADCAST, (char *) & True, sizeof True)==0 ;
-    if (! Rc)
-	{
-		SVC_WARNING ("Can add broadcast capabilty to DHCP socket ! \nError %d", WSAGetLastError());
-    }
-    // add receive broadcast capacity to DHCP listening socket 
-	// if (  LOBYTE(LOWORD(  GetVersion ()  ))  >= 6)
-	Rc = setsockopt (tThreads[TH_DHCP].skt, IPPROTO_IP, IP_PKTINFO, (char *) & True, sizeof True) ;		
-	if (Rc==-1)
-	{
-		SVC_WARNING ("Can add PKTINFO capabilty to DHCP socket ! \nError %d", WSAGetLastError());
-		Rc = WSAGetLastError ();
-    }
+   // add broadcast permission to socket
+   if (setsockopt (tThreads[TH_DHCP].skt, SOL_SOCKET, SO_BROADCAST, (char *) & True, sizeof True) != 0)
+   {
+	   LOG (1, "can't set broadcast option.\nPlease, suppress DHCP server in the settings window");
+	   LogToMonitor ("can't set broadcast option.\n");
+	   tThreads[TH_DHCP].gRunning = FALSE; 
+   }
 
    while ( tThreads[TH_DHCP].gRunning )
    {
         // send leases to GUI
         Dhcp_Send_Leases (tFirstIP, nAllocatedIP);
-        memset (& sDhcpPkt, 0, sizeof sDhcpPkt);
 
-		// try to receive request and get incoming interface (need at last XP or windows server 2003)
-		Rc = SktRcvAndGetAddrOfIncomingIf (tThreads[TH_DHCP].skt, 
-											(char *) & sDhcpPkt,
-											sizeof sDhcpPkt,
-											& SockFrom,
-											& SockTo );
-		// 2nd chance for old OS, try recvfrom
-		// should succeed if host is NOT multi-homed
-		if (Rc==-1  && GetLastError()==WSAVERNOTSUPPORTED)
-		{
-			Rc = recvfrom ( tThreads[TH_DHCP].skt,
-							(char *) & sDhcpPkt,
-							sizeof sDhcpPkt,
-							0,
-							(struct sockaddr *) & SockFrom,
-							& nFromLen);
-		}
-		
-		// recv error
+        memset (& sDhcpPkt, 0, sizeof sDhcpPkt);
+        Rc = recvfrom ( tThreads[TH_DHCP].skt,
+                        (char *) & sDhcpPkt,
+                        sizeof sDhcpPkt,
+                        0,
+                        (struct sockaddr *) & SockFrom,
+                        & nFromLen);
+      // recv error
       // since Tftpd32 sends broadcasts, it receives its own message, just ignore it
         if (Rc < 0)
         {
@@ -1261,20 +889,11 @@ BOOL                    bUniCast;
            continue;
         }
 
-		// receive on a unbound interface
-		if (    sSettings.szDHCPLocalIP[0]!=0 
-			&&  SockTo.sin_addr.s_addr != inet_addr (sSettings.szDHCPLocalIP))
-        {
-           LOG (1, "Message received on an unbound interface (IP %s)", inet_ntoa (SockTo.sin_addr));
-           Sleep (10);
-           continue;
-        }
-
         // if pool is empty and MAC address not statically assigned : ignore request
         if (    sParamDHCP.nPoolSize == 0  
             &&  DHCP_StaticAssignation (& sDhcpPkt)==INADDR_NONE )
         {
-           Sleep (10);
+           Sleep (100);
            continue;
         }
 
@@ -1305,18 +924,40 @@ BOOL                    bUniCast;
         bUniCast =  (     SockFrom.sin_addr.s_addr!=htonl (INADDR_NONE)
                       &&  SockFrom.sin_addr.s_addr!=htonl (INADDR_ANY)
                       // fix 5/02/2006 : 127.0.0.2 should be handle as a broadcast
-                      &&  SockFrom.sin_addr.S_un.S_un_b.s_b1 != CLASS_A_LOOPBACK ) ; // class A 127
+                      &&  SockFrom.sin_addr.S_un.S_un_b.s_b1 != 127 ) ; // class A 127
         if (ProcessDHCPMessage ( & sDhcpPkt, & nSize ) )
-        {
+        {struct servent *lpServEnt;
 //            BinDump ((char *)&sDhcpPkt, sizeof sDhcpPkt, "DHCP");
-		   // send reply 
-		   // -> if unicast replies, use Windows default behaviour
-		   // -> otherwise, send a broadcast on the incoming interface (which is not the default)
-		   if (bUniCast)
-				DHCPSingleSend (tThreads[TH_DHCP].skt, & SockFrom, & sDhcpPkt, nSize, bUniCast);
-		   else
-			    DHCPSendFrom (& SockTo, & SockFrom, & sDhcpPkt, nSize);
-				
+           SockFrom.sin_family = AF_INET;
+           // if no source address was specified reply with a broadcast
+           if (!bUniCast)  SockFrom.sin_addr.s_addr = htonl (INADDR_NONE);
+
+		   // Added : DHCP relay detection --> send replies to port 67 and 68
+           if (sDhcpPkt.giaddr.s_addr!=htonl(INADDR_ANY)  || sDhcpPkt.giaddr.s_addr!=htonl(INADDR_NONE))
+           {
+			  // sends to port 67
+              lpServEnt = getservbyname ("bootps", "udp") ;
+              SockFrom.sin_port =  (lpServEnt != NULL) ?  lpServEnt->s_port : htons (BOOTPS_PORT);
+	          Rc = sendto (tThreads[TH_DHCP].skt,
+		                    (char *) & sDhcpPkt,
+			                 nSize,
+				             0,
+					        (struct sockaddr *) & SockFrom,
+						    sizeof SockFrom);
+			  // and prepare for port 68
+              lpServEnt = getservbyname ("bootpc", "udp") ;
+              SockFrom.sin_port =  (lpServEnt != NULL) ?  lpServEnt->s_port : htons (BOOTPC_PORT);
+           }
+
+           LOG (15, "Thread 0x%X: send %d bytes", GetCurrentThreadId(), nSize );
+           Rc = sendto (tThreads[TH_DHCP].skt,
+                        (char *) & sDhcpPkt,
+                         nSize,
+                         0,
+                        (struct sockaddr *) & SockFrom,
+                        sizeof SockFrom);
+           if (Rc<nSize)
+                LOG (1, "sendto error %d: %s", GetLastError(), LastErrorText ());
         }  // ProcessDHCPMessage
 
    } // do it eternally

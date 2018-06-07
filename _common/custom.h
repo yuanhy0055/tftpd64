@@ -23,14 +23,7 @@ enum { STANDALONE_EDITION_VALUE = 10, SERVICE_EDITION_VALUE };
 extern const int g_VERSION;
 
 // Exchanged between GUI and services
-
-#ifdef STANDALONE_EDITION
-#  define CURRENT_PROTOCOL_VERSION_BASE 0x10000
-#endif
-#ifdef SERVICE_EDITION
-#  define CURRENT_PROTOCOL_VERSION_BASE 0
-#endif
-#  define CURRENT_PROTOCOL_VERSION (12+CURRENT_PROTOCOL_VERSION_BASE)
+#define CURRENT_PROTOCOL_VERSION 12
 
 
 //////////////////////////
@@ -68,7 +61,7 @@ extern const int g_VERSION;
 //////////////////////////
 
 #  define SYSLOG_PORT           514
-#  define SYSLOG_MAXMSG        5120
+#  define SYSLOG_MAXMSG        1024
 #  define DNS_MAXMSG           1024
 
 #define  LOOPBACK_STRING        "127.0.0.1"

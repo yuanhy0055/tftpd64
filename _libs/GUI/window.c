@@ -11,10 +11,8 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <commctrl.h>
-// Macro redefinition. Removing
-// #define _WIN32_IE 0x500
+#define _WIN32_IE 0x500
 #include <shellapi.h>
-#include <stdio.h>
 
 #include "../log/LogToMonitor.h"
 #include "../lasterr/lasterr.h"
@@ -229,19 +227,12 @@ return TRUE;
 } // CopyStringIntoClipboard
 
 
-// copy a ComboBox and select a given string
-// Note : Since CB_IP has changed from text to a S_If structure
-// this is not exactly a Copy function...
-int CopyCBContent (HWND hFromCB, HWND hToCB, const char *lpszFind, int family)
+// copy a ComboBox and select a give string
+int CopyCBContent (HWND hFromCB, HWND hToCB, const char *lpszFind)
 {
 int Rc=-1;
 int Ark, n;
-struct S_If 
-{
-	char  *descr;
-	char  *addr;
-} // Struct S_If 
-*pif;
+char szBuf[128];
    // erase content
    ComboBox_ResetContent (hToCB);
    // get n of source items
@@ -249,24 +240,12 @@ struct S_If
    // copy original combo
    for (Ark=0 ; Ark<n ; Ark++)
    {
-	   pif = (struct S_If *) ComboBox_GetItemData (hFromCB, Ark);
-	   // if AF_INET specified do not copy IPv6 address (the ones with : in the address)
-	   if (! (family==AF_INET && strchr (pif->addr, ':')!=NULL)) ComboBox_AddString (hToCB, pif->addr);
+	   ComboBox_GetLBText (hFromCB, Ark, szBuf);
+	   ComboBox_AddString (hToCB, szBuf);
    }
 	  // locate string and select if found
-   if (lpszFind!=NULL  && lpszFind[0]!=0)
-   {
-		Rc = ComboBox_FindStringExact (hToCB, 0, lpszFind);
-		if (Rc==-1) 
-		{
-			// DHCP bound address is not present into the interface list
-			// (because tftpd32.ini has been edited or interface address has changed...)
-			char sz[128];
-			sscanf (lpszFind, "%[0-9.:]", sz);
-			lstrcat (sz, " [Bad Addr]");
-			Rc = ComboBox_InsertString (hToCB, 0, sz);
-		}
-   }
+   if (lpszFind!=NULL)
+		Rc = ComboBox_FindString (hToCB, 0, lpszFind);
    ComboBox_SetCurSel (hToCB, Rc==-1 ? 0 : Rc);
 return Ark;
 } // CopyCBContent

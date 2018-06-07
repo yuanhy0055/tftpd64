@@ -25,43 +25,39 @@ static struct
 }
 tTftpd32Entry[] =
 {
-    { KEY_BASEDIR,                 sSettings.szBaseDirectory,           REG_SZ,      sizeof sSettings.szBaseDirectory   },
-    { KEY_PORT,                  & sSettings.Port,                      REG_DWORD,   sizeof sSettings.Port              },
-    { KEY_HIDE,                  & sSettings.bHide,                     REG_DWORD,   sizeof sSettings.bHide             },
-    { KEY_WINSIZE,               & sSettings.WinSize,                   REG_DWORD,   sizeof sSettings.WinSize           },
-    { KEY_NEGOCIATE,             & sSettings.bNegociate,                REG_DWORD,   sizeof sSettings.bNegociate        },
-    { KEY_PXE,                   & sSettings.bPXECompatibility,         REG_DWORD,   sizeof sSettings.bPXECompatibility },
-    { KEY_DIRTEXT,               & sSettings.bDirText,                  REG_DWORD,   sizeof sSettings.bDirText          },
-    { KEY_PROGRESS,              & sSettings.bProgressBar,              REG_DWORD,   sizeof sSettings.bProgressBar      },
-    { KEY_TIMEOUT,               & sSettings.Timeout,                   REG_DWORD,   sizeof sSettings.Timeout           },
-    { KEY_MAXRETRANSMIT,         & sSettings.Retransmit,                REG_DWORD,   sizeof sSettings.Retransmit        },
-    { KEY_DEFSECURITY,           & sSettings.SecurityLvl,               REG_DWORD,   sizeof sSettings.SecurityLvl       },
-    { KEY_UNIX,                  & sSettings.bUnixStrings,              REG_DWORD,   sizeof sSettings.bUnixStrings      }, 
-    { KEY_BEEP,                  & sSettings.bBeep,                     REG_DWORD,   sizeof sSettings.bBeep             },
-    { KEY_VROOT,                 & sSettings.bVirtualRoot,              REG_DWORD,   sizeof sSettings.bVirtualRoot      },
-    { KEY_MD5,                   & sSettings.bMD5,                      REG_DWORD,   sizeof sSettings.bMD5              },
-    { KEY_TFTPLOCALIP,           sSettings.szTftpLocalIP,               REG_SZ,      sizeof sSettings.szTftpLocalIP     },
-    { KEY_SERVICES,              & sSettings.uServices,                 REG_DWORD,   sizeof sSettings.uServices         },
-    { KEY_TFTPLOGFILE,             sSettings.szTftpLogFile,             REG_SZ,      sizeof sSettings.szTftpLogFile     },
-    { KEY_SYSLOGFILE,              sSettings.szSyslogFile,              REG_SZ,      sizeof sSettings.szSyslogFile      },
-    { KEY_SYSLOGPIPE,            & sSettings.bSyslogPipe,               REG_DWORD,   sizeof sSettings.bSyslogPipe       },
-    { KEY_LOWEST_PORT,           & sSettings.nTftpLowPort,              REG_DWORD,   sizeof sSettings.nTftpLowPort      },
-    { KEY_HIGHEST_PORT,          & sSettings.nTftpHighPort,             REG_DWORD,   sizeof sSettings.nTftpHighPort     },
-    { KEY_MCAST_PORT,            & sSettings.dwMCastPort,               REG_DWORD,   sizeof sSettings.dwMCastPort       },
-    { KEY_MCAST_ADDR,              sSettings.szMCastAddr,               REG_SZ,      sizeof sSettings.szMCastAddr       },
-    { KEY_PERS_LEASES,           & sSettings.bPersLeases,               REG_DWORD,   sizeof sSettings.bPersLeases       },
-    { KEY_UNICAST_BOOTP,         & sSettings.bUnicastBOOTP,             REG_DWORD,   sizeof sSettings.bUnicastBOOTP     },
-    { KEY_PING,                  & sSettings.bPing,                     REG_DWORD,   sizeof sSettings.bPing             },
-    { KEY_DOUBLE_ANSWER,         & sSettings.bDoubleAnswer,             REG_DWORD,   sizeof sSettings.bDoubleAnswer      },
-	{ KEY_DHCP_LOCIP,              sSettings.szDHCPLocalIP,             REG_SZ,      sizeof sSettings.szDHCPLocalIP     },
-    { KEY_MAX_TRANSFERS,         & sSettings.dwMaxTftpTransfers,        REG_DWORD,   sizeof sSettings.dwMaxTftpTransfers },
-	{ KEY_USE_EVENTLOG,          & sSettings.bEventLog,                 REG_DWORD,   sizeof sSettings.bEventLog         },
-    { KEY_CONSOLE_PWD,             sSettings.szConsolePwd,              REG_SZ,      sizeof sSettings.szConsolePwd      },
-    { KEY_PORT_OPTION,           & sSettings.bPortOption,               REG_DWORD,   sizeof sSettings.bPortOption       },
-    { KEY_GUI_REMANENCE,         & sSettings.nGuiRemanence,             REG_DWORD,   sizeof sSettings.nGuiRemanence     },
-    { KEY_IGNORE_LASTBLOCK_ACK,  & sSettings.bIgnoreLastBlockAck,       REG_DWORD,   sizeof sSettings.bIgnoreLastBlockAck     },
-//	{ KEY_IPv4,                  & sSettings.bIPv4,                     REG_DWORD,   sizeof sSettings.bIPv4             },
-	{ KEY_IPv6,                  & sSettings.bIPv6,                     REG_DWORD,   sizeof sSettings.bIPv6             },
+    { KEY_BASEDIR,      sSettings.szBaseDirectory,   REG_SZ,    sizeof sSettings.szBaseDirectory },
+    { KEY_PORT,       & sSettings.Port,              REG_DWORD, sizeof sSettings.Port            },
+    { KEY_HIDE,       & sSettings.bHide,             REG_DWORD, sizeof sSettings.bHide           },
+    { KEY_WINSIZE,    & sSettings.WinSize,           REG_DWORD, sizeof sSettings.WinSize         },
+    { KEY_NEGOCIATE,  & sSettings.bNegociate,        REG_DWORD, sizeof sSettings.bNegociate      },
+    { KEY_PXE,        & sSettings.bPXECompatibility, REG_DWORD, sizeof sSettings.bPXECompatibility },
+    { KEY_DIRTEXT,    & sSettings.bDirText,          REG_DWORD, sizeof sSettings.bDirText        },
+    { KEY_PROGRESS,   & sSettings.bProgressBar,      REG_DWORD, sizeof sSettings.bProgressBar    },
+    { KEY_TIMEOUT,    & sSettings.Timeout,           REG_DWORD, sizeof sSettings.Timeout         },
+    { KEY_MAXRETRANSMIT,& sSettings.Retransmit,      REG_DWORD, sizeof sSettings.Retransmit      },
+    { KEY_DEFSECURITY,& sSettings.SecurityLvl,       REG_DWORD, sizeof sSettings.SecurityLvl     },
+    { KEY_UNIX,       & sSettings.bUnixStrings,      REG_DWORD, sizeof sSettings.bUnixStrings    }, 
+    { KEY_BEEP,       & sSettings.bBeep,             REG_DWORD, sizeof sSettings.bBeep           },
+    { KEY_VROOT,      & sSettings.bVirtualRoot,      REG_DWORD, sizeof sSettings.bVirtualRoot    },
+    { KEY_MD5,        & sSettings.bMD5,              REG_DWORD, sizeof sSettings.bMD5            },
+    { KEY_LOCALIP,      sSettings.szLocalIP,         REG_SZ,    sizeof sSettings.szLocalIP       },
+    { KEY_SERVICES,   & sSettings.uServices,         REG_DWORD, sizeof sSettings.uServices       },
+    { KEY_TFTPLOGFILE,  sSettings.szTftpLogFile,     REG_SZ,    sizeof sSettings.szTftpLogFile   },
+    { KEY_SYSLOGFILE,   sSettings.szSyslogFile,      REG_SZ,    sizeof sSettings.szSyslogFile    },
+    { KEY_SYSLOGPIPE,  &sSettings.bSyslogPipe,       REG_DWORD, sizeof sSettings.bSyslogPipe     },
+    { KEY_LOWEST_PORT,  &sSettings.nTftpLowPort,     REG_DWORD, sizeof sSettings.nTftpLowPort    },
+    { KEY_HIGHEST_PORT, &sSettings.nTftpHighPort,    REG_DWORD, sizeof sSettings.nTftpHighPort   },
+    { KEY_MCAST_PORT,   &sSettings.dwMCastPort,      REG_DWORD, sizeof sSettings.dwMCastPort     },
+    { KEY_MCAST_ADDR,   sSettings.szMCastAddr,       REG_SZ,    sizeof sSettings.szMCastAddr     },
+    { KEY_PERS_LEASES, &sSettings.bPersLeases,       REG_DWORD, sizeof sSettings.bPersLeases     },
+    { KEY_PING,        &sSettings.bPing,             REG_DWORD, sizeof sSettings.bPing           },
+    { KEY_DHCP_LOCIP,  &sSettings.szDHCPLocalIP,     REG_SZ,    sizeof sSettings.szDHCPLocalIP   },
+    { KEY_MAX_TRANSFERS, &sSettings.dwMaxTftpTransfers, REG_DWORD, sizeof sSettings.dwMaxTftpTransfers },
+	{ KEY_USE_EVENTLOG, &sSettings.bEventLog,        REG_DWORD, sizeof sSettings.bEventLog       },
+    { KEY_CONSOLE_PWD,  sSettings.szConsolePwd,      REG_SZ,    sizeof sSettings.szConsolePwd    },
+    { KEY_PORT_OPTION, & sSettings.bPortOption,      REG_DWORD, sizeof sSettings.bPortOption     },
+    { KEY_GUI_REMANENCE, & sSettings.nGuiRemanence,  REG_DWORD, sizeof sSettings.nGuiRemanence   },
+    { KEY_IGNORE_LASTBLOCK_ACK, & sSettings.bIgnoreLastBlockAck,       REG_DWORD, sizeof sSettings.bIgnoreLastBlockAck     },
 };
 
 #define READKEY(x,buf) \
@@ -78,49 +74,45 @@ tTftpd32Entry[] =
 
 struct S_Tftpd32Settings sSettings =
 {
-	  ".",                   // Base directory
-	  TFTPD32_DEF_LOG_LEVEL, // Log level
-	  TFTP_TIMEOUT,          // default timeout
-	  TFTP_RETRANSMIT,       // def retransmission7
-	  0,                     // WinSize
-	  SECURITY_STD,          // Security
-	  TFTP_DEFPORT,          // Tftp Port
-	  FALSE,                 // Do not Hide
-	  TRUE,                  // RFC 1782-1785 Negociation
-	  FALSE,                 // PXE Compatibility
-	  TRUE,                  // show progress bar ?
-	  FALSE,                 // do not create dir.txt file
-	  FALSE,                 // do not create MD5 file
-	  FALSE,                 // do not resume
-	  TRUE,                  // Unix like files "/tftpboot/.."
-	  FALSE,                 // Do not beep for long transfert
-	  FALSE,                 // Virtual Root is not enabled
-	  "",                    // do not filter TFTP'slistening interface
-	  TFTPD32_ALL_SERVICES,  // all services are enabled
-	  0,  0,                 // use ports assigned by Windows
-	  "",                    // No log file
-	  "",                    // do not save syslog msg into a file
-	  FALSE,                 // do not forward syslog msg to pipe
-	  "",                    // Default mcast address
-	  0,                     // Default mcast port
-	  1,                     // persistant leases
-	  0,                     // Unicast offer (BOOTP Compatibility)
-	  1,                     // ping address before assignation
-	  0,                     // Do not double answer
-	  "",                    // do not filter DHCP'slistening interface
-	  FALSE,				 // report errors into event log
-	  DFLT_CONSOLE_PWD,      // console password
-	  FALSE,                 // do not support port option
-	  5,					 // after 5 seconds delete Tftp record
-	  FALSE,				 // wait for ack of last TFTP packet
-	  TRUE,					 // IPv4
-	  TRUE,					 // IPv6
+  ".",                  // Base directory
+  TFTPD32_DEF_LOG_LEVEL, // Log level
+  TFTP_TIMEOUT,             // default timeout
+  TFTP_RETRANSMIT,       // def retransmission7
+  0,                     // WinSize
+  SECURITY_STD,          // Security
+  TFTP_DEFPORT,             // Tftp Port
+  FALSE,                 // Do not Hide
+  TRUE,                  // RFC 1782-1785 Negociation
+  FALSE,                 // PXE Compatibility
+  TRUE,                  // show progress bar ?
+  FALSE,                 // do not create dir.txt file
+  FALSE,                 // do not create MD5 file
+  FALSE,                 // do not resume
+  TRUE,                  // Unix like files "/tftpboot/.."
+  FALSE,                 // Do not beep for long transfert
+  FALSE,                 // Virtual Root is not enabled
+  "",                    // do not filter TFTP'slistening interface
+  TFTPD32_ALL_SERVICES,  // all services are enabled
+  0,  0,                 // use ports assigned by Windows
+  "",                    // No log file
+  "",                    // do not save syslog msg into a file
+  FALSE,                 // do not forward syslog msg to pipe
+  "",                     // Default mcast address
+  0,                     // Default mcast port
+  1,                     // persistant leases
+  1,                     // ping address before assignation
+  "",                    // do not filter DHCP'slistening interface
+  FALSE,				 // report errors into event log
+  DFLT_CONSOLE_PWD,      // console password
+  FALSE,                 // do not support port option
+  5,					 // after 5 seconds delete Tftp record
+  FALSE,				 // wait for ack of last TFTP packet
   
-	  // unsaved
-	  100,                   // Max Simultaneous Transfers
-	  ".",                   // Working Directory
-	  2000,                  // refresh Interval
-	  TFTPD32_TCP_PORT,		 // default port
+  // unsaved
+  100,                   // Max Simultaneous Transfers
+  ".",                   // Working Directory
+  2000,                  // refresh Interval
+  TFTPD32_TCP_PORT,		 // default port
 };
 
 
@@ -161,8 +153,6 @@ char szCurDir[_MAX_PATH];
 #ifdef BAE_SYSTEMS_LEN_WHITE
   sSettings.uServices = TFTPD32_TFTP_SERVER;
 #endif
-  // Tftp assigned to a physical interface ?
-  sSettings.bTftpOnPhysicalIf = sSettings.szTftpLocalIP[0]!=0 && !isdigit (sSettings.szTftpLocalIP[0]);
 return Rc;
 } // Tftpd32ReadSettings
 
@@ -199,17 +189,12 @@ FILE *f;
     Rc = RegDeleteKey (HKEY_LOCAL_MACHINE, TFTPD32_MAIN_KEY);
         
         // delete ini file
-/*    if (szTftpd32IniFile[0]!=0)
+    if (szTftpd32IniFile[0]!=0)
     {
         f = fopen (szTftpd32IniFile, "wt");
         if (f!=NULL) fclose (f);
     }
-*/
-     if (szTftpd32IniFile[0]!=0)
-    {
-        fopen_s (&f, szTftpd32IniFile, "wt");
-        if (f!=NULL) fclose (f);
-    }       
+        
 return Rc==ERROR_SUCCESS;
 }  // Tftpd32DestroySettings
 

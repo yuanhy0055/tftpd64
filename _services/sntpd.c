@@ -119,10 +119,10 @@ void SntpdProc (void *param)
 int             Rc;
 char     sSntpBuf [1024];    /* space for padding */
 struct sSntpPkt *pSntpData;
-SOCKADDR_STORAGE SockFrom;
-int              nFromLen = sizeof SockFrom;
-char             szName [256];
-struct hostent  *pHostEntry;
+struct sockaddr_in      SockFrom;
+int                       nFromLen = sizeof SockFrom;
+char            szName [256];
+struct hostent *pHostEntry;
 
            // give PC address as reference
            if (       gethostname (szName, sizeof szName)!=SOCKET_ERROR
@@ -130,8 +130,6 @@ struct hostent  *pHostEntry;
                   &&  pHostEntry->h_addr_list!=NULL
               )
                    sSntpDefaultData.refid = * (DWORD *) pHostEntry->h_addr_list[0] ;
-
-  tThreads [TH_SNTP].bInit = TRUE;  // inits OK
 
 
    while ( tThreads[TH_SNTP].gRunning )
@@ -142,11 +140,6 @@ struct hostent  *pHostEntry;
                           0,
                          (struct sockaddr *) & SockFrom,
                           & nFromLen);
-		 if (Rc < 0)
-		 {
-   		     LogToMonitor ("erreur %d during socket operation", GetLastError () );
-			 Sleep (100);
-		 }
          pSntpData = (struct sSntpPkt *) sSntpBuf;
 
          // ignore message if it is not a client request or if it is has been sent by Tftpd32

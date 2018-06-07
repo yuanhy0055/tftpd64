@@ -12,8 +12,6 @@
 
 
 // Starts one thread per service (Tftpd, Sntpd, dhcpd)
-// Order is the same than tThreadsConfig array 
-// pseudo service should be first
 enum e_Threads { TH_CONSOLE, 
                  TH_ASYNCSAVEKEY, 
 				 TH_SCHEDULER,
@@ -27,21 +25,12 @@ enum e_Threads { TH_CONSOLE,
 // Events created for main threads
 struct S_ThreadMonitoring
 {
-    int     gRunning;    // thread status
-    HANDLE  tTh;         // thread handle
-    HANDLE  hEv;         // wake up event
-    SOCKET  skt;         // Listening SOCKET
-	int     bSoftReset;  // Thread will be reset
-	BOOL    bInit;		 // inits are terminated
+    int gRunning;       // thread status
+    HANDLE tTh;         // thread handle
+    HANDLE hEv;         // wake up event
+    SOCKET  skt;        // Listening SOCKET
 }  
 tThreads [TH_NUMBER];
-
-struct S_RestartTable
-{
-	int oldservices;
-	int newservices;
-	int flapservices;
-};
 
 
 // threads started by StartAllThreads
@@ -57,7 +46,7 @@ void ListenDNSMessage (void * param);
 
 // Threads management : birth, life and death
 int  StartAllWorkerThreads (void);
-int  StartMultiWorkerThreads (BOOL bSoft);
+int  StartWorkerThreads (BOOL bSoft);
 int  WakeUpThread (int Idx);
 void TerminateWorkerThreads (BOOL bSoft);
 int GetRunningThreads (void);
@@ -72,19 +61,9 @@ int SendMsgRequest (int type,				// msg type
 BOOL Tftpd32ReadSettings (void);
 BOOL Tftpd32SaveSettings (void);
 BOOL Tftpd32DestroySettings (void);
-void Tftpd32UpdateServices (void *lparam);
 
 // Send the IP interfaces
 int	AnswerIPList (void);
 
 // Complex actions handled by console thread
 void SendDirectoryContent (void);
-
-// interaction between tftp and console (statistics)
-DWORD WINAPI StartTftpTransfer (LPVOID pThreadArgs);
-int ReportNewTrf (const struct LL_TftpInfo *pTftp);
-void ConsoleTftpGetStatistics (void);
-
-// Actions called by Scheduler
-int PoolNetworkInterfaces (void);
-int GetIPv4Address (const char *szIf, char *szIP);

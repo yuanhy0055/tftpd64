@@ -10,7 +10,7 @@
 
 
 
-#define TFTPD32_TCP_PORT    2994
+#define TFTPD32_TCP_PORT    1994
 #define LOGSIZE              512
 
 enum e_Types
@@ -34,15 +34,11 @@ enum e_Types
 	C_SERVICES_STARTED,          // init done
     C_REPLY_DIRECTORY_CONTENT,   // list directory
 	C_DNS_NEW_ENTRY,              // DNS request
-	C_CHG_SERVICE,				  // Service has been started/stopped
 
     // msg sent from the GUI to the service 
     C_CONS_KILL_TRF     = 200,
     C_TFTP_TERMINATE,
     C_DHCP_TERMINATE,
-	C_SYSLOG_TERMINATE,
-	C_SNTP_TERMINATE,
-	C_DNS_TERMINATE,
     C_TERMINATE,			// kill threads (terminating)
 	C_SUSPEND,              // kill worker services
     C_START,				// start services
@@ -58,31 +54,21 @@ enum e_Types
 	C_RRQ_GET_DHCP_ALLOCATION,  // number of allocation
 	C_RRQ_GET_INTERFACES,       // IP interfaces
     C_RRQ_DIRECTORY_CONTENT,
-	C_TFTP_GET_FULL_STAT,		// request statistics
+    
 
 } ;
 
-// server's interfaces
-struct S_ItfEntry
-{
-	char sz [MAX_ADAPTER_DESCRIPTION_LENGTH+1];
-	int  status;
-}; // S_IfEntry
 // address owned by the server
 struct S_IPAddressEntry
 {
-	int    idx;				// points on the interface entry
-	char sz [MAXLEN_IPv6];
+	struct in_addr address;
+	int            status;
 };
 struct S_IPAddressList
 {
-#define MAX_IP_ADDR 30
-#define MAX_ITF     12
-	int                      nb_itf;
-	int                      nb_addr;
-	struct S_IPAddressEntry  addr [MAX_IP_ADDR];
-	struct S_ItfEntry        itf [MAX_ITF];
-
+#define MAX_IP_ITF 30
+	int                     nb_addr;
+	struct S_IPAddressEntry ent[MAX_IP_ITF];
 }; // S_IPAddressList
 
 // A new transfer has begun
@@ -91,7 +77,7 @@ struct S_TftpTrfNew
    DWORD dwTransferId;
    struct S_Trf_Statistics stat;
    int   opcode;
-   SOCKADDR_STORAGE from_addr;
+   struct sockaddr_in from_addr;
    char  szFile [_MAX_PATH];
 };
 // A transfer has ended
@@ -144,7 +130,7 @@ struct S_DhcpSuppressLease
 // syslog msg transferred from service to GUI
 struct S_SyslogMsg
 {
-    char from [MAXLEN_IPv6];
+    char from [sizeof "255.255.255.255"];
     char txt [SYSLOG_MAXMSG + 1];
 }; 
 
@@ -165,16 +151,8 @@ struct S_DNS_NewEntry
 {
     char   name [NI_MAXHOST];
 	char   ipv4 [sizeof "255.255.255.255"];
-	char   ipv6 [MAXLEN_IPv6];
+	char   ipv6 [sizeof "65535:65535:65535:65535:65535:65535:65535:65535"];
 }; // S_DNS_NewEntry
-
-// beginning or end of a service
-struct S_Chg_Service
-{
-	int service;   // id of the service TFTPD32_TFTP_SERVER, TFTPD32_DHCP_SERVER, ...
-	int status;    // either SERVICE_RUNNING or SERVICE_STOPPED
-}; // struct S_Chg_Service
-
 
 
 struct S_ConsoleMsg
@@ -200,7 +178,6 @@ struct S_ConsoleMsg
         struct S_DirectoryContent  dir;
 
 		struct S_DNS_NewEntry      dns;
-		struct S_Chg_Service       chg;
 
         char                 log [LOGSIZE];
 		char                 error [LOGSIZE];

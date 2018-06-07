@@ -32,23 +32,11 @@ extern  int            nAllocatedIP;    // number of item allocated (even if nev
 
 struct S_DHCP_Param
 {
-//   struct in_addr  dwAddr;
-   char            szAddr[64];
+   struct in_addr  dwAddr;
    int             nPoolSize;
-//   struct in_addr  dwMask;
-   char            szMask[64];
-//   struct in_addr  dwDns;
-   char            szDns1[64];
-   char            szDns2[64];
-//   struct in_addr  dwWins;
-   char            szWins[64];
-//   struct in_addr  dwGateway;
-   char            szGateway[64];
-//   struct in_addr  dwOpt42;
-   char            szOpt42[64];
-//   struct in_addr  dwOpt120;
-   char            szOpt120[64];
-
+   struct in_addr  dwMask;
+   struct in_addr  dwDns;
+   struct in_addr  dwGateway;
    char            szBootFile[256];
    char            szDomainName[128];
    int             nLease;
@@ -64,13 +52,10 @@ struct S_DHCP_Param
 extern struct S_DHCP_Param  sParamDHCP;
 extern struct S_DHCP_Param  sGuiParamDHCP;
 
-// written by Cengiz Beytas, it has been rewritten by Jesus Soto
-// int FindAdapterIP(char *szIP, DWORD *pdwAdapter, DWORD *pdwFirstAdapter);// 
-// struct in_addr DlgItem2Address (HWND hWnd, int nDlgItem, const char *szDescr, BOOL bStrict);
 
 
-//struct in_addr DlgItem2Address (HWND hWnd, int nDlgItem, const char *szDescr, BOOL bStrict);
-int CheckInetAddress (HWND hWnd, char *szAddr, const char *szDescr, BOOL bStrict);
+struct in_addr DlgItem2Address (HWND hWnd, int nDlgItem, const char *szDescr, BOOL bStrict);
+
 int QsortCompare (const void *p1, const void *p2);
 int MACCompare (const void* p1, const void* p2);
 void IncNumAllocated (void);

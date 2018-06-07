@@ -10,7 +10,6 @@
 #include "headers.h"
 #include "threading.h"
 
-#define IPv6
 
 #define MAX_IPV6_ADDRESS 10
 #define DNS_CNAME     5			// canonical name	
@@ -107,17 +106,15 @@ static int CreateAnswerMsg (const DNS_HEADER *req,
 //
 void ListenDNSMessage (void * param)
 {
-SOCKET           sDNSSocket=INVALID_SOCKET;
-int              Rc;
-SOCKADDR_STORAGE sSock;
-int              nDummy;
+SOCKET   sDNSSocket=INVALID_SOCKET;
+int             Rc;
+struct sockaddr_in sSock;
+int             nDummy;
 char Buf [DNS_MAXMSG], answer [DNS_MAXMSG];
 int anslen=0;
 
    sDNSSocket  = tThreads[TH_DNS].skt;
 
-   
-   tThreads [TH_DNS].bInit = TRUE;  // inits OK
    while ( tThreads[TH_DNS].gRunning )
    {
       nDummy = sizeof sSock;

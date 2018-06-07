@@ -21,7 +21,6 @@
 #include <stdlib.h>
 #include <assert.h>
 #include "tcp4u.h"
-#include "..\log\logtomonitor.h"
 
 #ifndef INVALID_FILE_HANDLE
 #   define INVALID_FILE_HANDLE  (HANDLE) -1
@@ -47,9 +46,8 @@ int nKeyLen = lstrlen (key);
 return sz;	 
 } // crypt
 
-// ok : there was no need to use 2 exchanges.
-// however it can not be changed to support legacy 
-int TcpExchangeChallenge (SOCKET s, int seed, int nVersion, int *peerVersion, const char *key)
+
+int TcpExchangeChallenge (SOCKET s, int seed, int nVersion, const char *key)
 {
 FILETIME ft;
 struct S_Challenge Out1, In1, Out2, In2;
@@ -67,16 +65,9 @@ int Ark;
 	Rc = TcpPPSend ( s, (char *) & Out1, sizeof Out1, INVALID_FILE_HANDLE );
 	if (Rc<0) return Rc;			
 	Rc = TcpPPRecv ( s, (char *) & In1, sizeof In1, 10, INVALID_FILE_HANDLE );
-	if (Rc<0) 
-	{int Ark = WSAGetLastError ();
-	    LogToMonitor ("Error %d receiving on socket %d\n", Ark, s);
-		return Rc;
-	}
-
-	if (peerVersion != NULL) *peerVersion = In1.version;
+	if (Rc<0) return Rc;
 	/* verify version */
 	if (In1.version != nVersion) return TCP4U_VERSION_ERROR;
-
 	/* 'crypt' challenge */
 	Out2 = In1;
 	sym_crypt ( Out2.challenge, sizeof Out2.challenge, key );
@@ -89,10 +80,6 @@ int Ark;
 	if (Rc<0) return Rc;
 	/* un crypt In2 and compare with Out1 */
 	sym_crypt ( In2.challenge, sizeof In2.challenge, key );
-	// if 
-    if (! memcmp (In2.challenge, Out1.challenge, sizeof Out1.challenge)==0 )
-		return TCP4U_BAD_AUTHENT ;
-
-return TCP4U_SUCCESS;
+return memcmp (In2.challenge, Out1.challenge, sizeof Out1.challenge)==0 ? TCP4U_SUCCESS : TCP4U_BAD_AUTHENT ;
 } // TcpExchangeChallenge
 	

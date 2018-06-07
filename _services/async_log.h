@@ -8,14 +8,13 @@
 //////////////////////////////////////////////////////
 
 
-#define MAX_MSG_IN_QUEUE 300
+#define MAX_MSG_IN_QUEUE 200
 #define LOGSIZE 512
 
 // Asynchronous log
 void __cdecl LOG (int DebugLevel, const char *szFmt, ...);
 void __cdecl SVC_ERROR (const char *szFmt, ...);
 void __cdecl SVC_WARNING (const char *szFmt, ...);
-
 
 
 

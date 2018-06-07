@@ -121,7 +121,7 @@ HWND hNW;
     hNW = CreateDialog (GetWindowInstance(hParentWnd), // hInstance
                         MAKEINTRESOURCE (IDD_DIALOG_GAUGE),
                         hParentWnd,           // Parent
-                        (DLGPROC) Gui_TftpGaugeProc);  // CallBack
+                        Gui_TftpGaugeProc);  // CallBack
 
     if (hNW == NULL)
     {
@@ -141,20 +141,15 @@ return hNW;
 /////////////////////
 static void Gui_FillGaugeWnd (HWND hNW, struct S_TftpGui *pTftpGui)
 {
-char  szTitle [_MAX_PATH + sizeof " from " + MAXLEN_IPv6];
-int   len;
+char            szTitle [_MAX_PATH+sizeof " from 255.255.255.255 "];
 
     assert (pTftpGui!=NULL);
 
     // retrieve file name from GUI datagram
-    len = wsprintf ( szTitle, "%s %s ",
-                     pTftpGui->filename,
-                     pTftpGui->opcode == TFTP_RRQ ? "to" : "from" );
-	getnameinfo ( (LPSOCKADDR) & pTftpGui->stg_addr, sizeof (pTftpGui->stg_addr), 
-		           szTitle+len, sizeof szTitle - len, 
-				   NULL, 0,
-				   NI_NUMERICHOST );
-
+    wsprintf ( szTitle, "%s %s %s",
+               pTftpGui->filename,
+               pTftpGui->opcode == TFTP_RRQ ? "to" : "from",
+               inet_ntoa (pTftpGui->from_addr.sin_addr) );
     SetWindowText (hNW, szTitle);
     if (pTftpGui->stat.dwTransferSize != 0)
            wsprintf (szTitle, "File size : %d", pTftpGui->stat.dwTransferSize);

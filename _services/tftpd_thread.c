@@ -127,9 +127,8 @@ struct errmsg *pe;
     }
     lstrcpy(tp->th_msg, pe->e_msg);
     length = lstrlen(pe->e_msg);
-	// padd with 2 null char
-    * (short *) & tp->th_msg[length] = 0;
-    length += 2 + offsetof (struct tftphdr, th_msg) ;
+    tp->th_msg[length] = '\0';
+    length += 5;
 #if (defined DEBUG || defined DEB_TEST)
         BinDump (pTftp->b.buf, length, "NAK:");
 #endif
@@ -141,7 +140,7 @@ struct errmsg *pe;
 ///////////////////////////////////////
 // Alter file name
 ///////////////////////////////////////
-static void SecFileName (char *szFile)
+void SecFileName (char *szFile)
 {
 char *p;
   // Translation de '/' en '\'
@@ -225,36 +224,38 @@ return 0;
 // TftpBind : a bind function which choose ports in a range
 //            nLow (nHigh) is lowest (highest)allowed ports
 /////////////////////
-static int TftpBind (SOCKET s, struct LL_TftpInfo *pTftp, unsigned nLow, unsigned nHigh)
+int TftpBind (SOCKET s, unsigned nLow, unsigned nHigh)
 {
 unsigned nPort;
-SOCKADDR_STORAGE in ;
+struct sockaddr_in s_in = { AF_INET, 0, 0 };
 int       Rc;
-
 
    // if settings unset or unconsistent, use defaults
    nPort =  ( nLow==69 ||  (nLow>=1024  &&  nLow<=nHigh) )  ?   nLow : 0;
-
-   memset (&in, 0, sizeof in);
-   in.ss_family = pTftp->b.from.ss_family;
    do
    {
-      switch (in.ss_family)
-      {
-	      case AF_INET :  (* (struct sockaddr_in *) & in).sin_port = htons ((short) nPort);
-					  break;
-
-	      case AF_INET6 : (* (struct sockaddr_in6 *) & in).sin6_port = htons ((short) nPort);
-					break;
-	  } // switch
-	  Rc = bind ( s, (struct sockaddr *)  & in, sizeof (in) );
-	}
-	//     range set     highest not reach       error  is address in use
-	while (nPort!=0  &&  nPort++<nHigh    &&    Rc!=0 && GetLastError()==WSAEADDRINUSE);
+      s_in.sin_port = htons ((short) nPort);
+      Rc = bind (s, (struct sockaddr *)& s_in, sizeof s_in);
+    }
+    //     range set     highest not reach       error  is address in use
+    while (nPort!=0  &&  nPort++<nHigh    &&    Rc!=0 && GetLastError()==WSAEADDRINUSE);
 
 return Rc;
 } // TftpBind
 
+
+
+/////////////////////
+// TftpMCastSend : send a multicast packet
+/////////////////////
+int TftpMCastSend (struct LL_TftpInfo *pTftp)
+{
+struct sockaddr_in s_in = { AF_INET, 0, 0 };
+     s_in.sin_port = htons ( (unsigned short) sSettings.dwMCastPort);
+     s_in.sin_addr.s_addr = inet_addr (sSettings.szMCastAddr);
+return sendto (pTftp->r.skt, pTftp->b.buf, pTftp->c.dwBytes + TFTP_DATA_HEADERSIZE,
+               0, (struct sockaddr *) &  s_in, sizeof s_in);
+} // MCastSend
 
 
 /////////////////////
@@ -304,13 +305,13 @@ return Rc; // TRUE if something is ready
 // Parse connect datagram :
 //      deep into the protocol
 /////////////////////////////
-static int DecodConnectData (struct LL_TftpInfo *pTftp)
+int DecodConnectData (struct LL_TftpInfo *pTftp)
 {
 
 struct tftphdr *tp, *tpack;
 char *p, *pValue, *pAck;
 int   opcode;
-int   Ark, Len;
+int   Ark;
 int   Rc;
 BOOL  bOptionsAccepted = FALSE;
 char  szExtendedName [2 * _MAX_PATH];
@@ -319,16 +320,14 @@ char  szExtendedName [2 * _MAX_PATH];
   sSettings.LogLvl = 10;
 #endif
 
-  // pad end of struct with 0
-  memset (pTftp->b.padding, 0, sizeof pTftp->b.padding);
+
   // map the datagram on a Tftp structure
   tp = (struct tftphdr *)pTftp->b.cnx_frame;
 
 
     //-------------------------   Verify Frame validity  -------------------------
     // terminate the strings
-	// PJO: 01 january 2017
-    //tp->th_stuff [TFTP_SEGSIZE - TFTP_DATA_HEADERSIZE - 1] = 0;	// suppress done above
+    tp->th_stuff [TFTP_SEGSIZE - TFTP_DATA_HEADERSIZE - 1] = 0;
 
     // read or write request
     opcode = ntohs (tp->th_opcode);
@@ -340,8 +339,8 @@ char  szExtendedName [2 * _MAX_PATH];
         return CNX_FAILED;
     }
 
-    // ensure file name is strictly under _MAX_PATH (strnlen will terminates)
-    if ( (Ark=strnlen (tp->th_stuff, _MAX_PATH)) >= _MAX_PATH)
+    // ensure file name is under _MAX_PATH (strlen will terminates)
+    if (lstrlen (tp->th_stuff) >= _MAX_PATH)
     {
         LOG (0, "File name too long, return EBADOP to peer");
         nak (pTftp, EBADOP);
@@ -364,23 +363,16 @@ char  szExtendedName [2 * _MAX_PATH];
     // OK now parse the frame
     // it should have the following format   <FILE>\0<MODE>\0EXTENSION\0....
 
-	// next word : Mode
-    p = & tp->th_stuff[++Ark];		// ++Ark to point after the null char
-	// ensure file name is strictly under the longest mode (0 included)
-	Len = strnlen (p, sizeof("netascii"));
-    if ( Len >= sizeof("netascii"))
-    {
-        LOG (0, "mode is too long, return EBADOP to peer");
-        nak (pTftp, EBADOP);
-        return CNX_FAILED;
-    }
-	Ark += Len;
-
+    // skip first word : file name
+    // since we have add a zero, the loop will stop
+    Ark = lstrlen (tp->th_stuff) + 1;
+    // next word : Mode
+    p = & tp->th_stuff[Ark];
     if (IS_OPT (p, "netascii")  ||  IS_OPT (p, "ascii"))
                         pTftp->s.TftpMode = TFTP_NETASCII;
     else if (IS_OPT (p, "mail"))
                         pTftp->s.TftpMode = TFTP_MAIL;
-    else if (IS_OPT (p, "octet")  ||  IS_OPT (p, "binary") )
+    else if (IS_OPT (p, "octet")  ||  IS_OPT (p, "binary") || IS_OPT (p, "OCTET") )
                         pTftp->s.TftpMode = TFTP_BINARY;
     else
     {
@@ -389,28 +381,30 @@ char  szExtendedName [2 * _MAX_PATH];
         return CNX_FAILED;
     }
     LOG (12, "Mode is <%s>", p);
-    
-    Ark++;	// p[Ark] points on beginning of next word
+    // points on end of word
+    Ark += lstrlen (p) + 1;
 
     LOG (1, "%s request for file <%s>. Mode %s",
                 opcode==TFTP_RRQ ? "Read" : "Write", tp->th_stuff, p);
 
     // input file parsing
-    //   --> change / to \, modify directory if VirtualRoot is on
+    //   --> change / to \, mdofy directory if VirtualRoot is on
     SecFileName (tp->th_stuff);
-	// Check if it passes security settings 
+
+	    // Check if it passes security settings and  ensure extended file name is under _MAX_PATH (strlen will terminates)
     if (! SecAllowSecurity (tp->th_stuff, opcode) )
     {
         LOG (1, "Error EACCESS on file %s. Ext error %s", tp->th_stuff, LastErrorText());
         nak (pTftp, EACCESS);
         return  CNX_FAILED;
     }
+
 	// get full name
     TftpExtendFileName (pTftp, tp->th_stuff, szExtendedName, sizeof szExtendedName);
     LOG (10, "final name : <%s>", szExtendedName);
     // ensure again extended file name is under _MAX_PATH (strlen will terminates)
     // NB: we also may call CreateFileW instaed of CreateFileA, but Windows95/Me will not support
-    if (strnlen (szExtendedName, _MAX_PATH) >= _MAX_PATH)
+    if (lstrlen (szExtendedName) >= _MAX_PATH)
     {
         LOG (0, "File name too long, return EBADOP to peer");
         nak (pTftp, EBADOP);
@@ -450,98 +444,110 @@ char  szExtendedName [2 * _MAX_PATH];
     // loop to handle options
     while ( (sSettings.bNegociate || sSettings.bPXECompatibility)  &&  Ark<TFTP_SEGSIZE)
     {
-        // if (tp->th_stuff[Ark] == 0) { Ark++; continue; }  // points on next word
+        if (tp->th_stuff[Ark] == 0) { Ark++; continue; }  // points on next word
         p = & tp->th_stuff[Ark];
         LOG (12, "Option is <%s>", p);
 
         // ----------
         // get 2 words (RFC 1782) : KeyWord + Value
-		// p points already on Keyword, search for Value
-        for ( ; Ark<TFTP_SEGSIZE && tp->th_stuff[Ark]!=0 ; Ark++);		// pass keyword
+        for ( ; Ark<TFTP_SEGSIZE && tp->th_stuff[Ark]!=0 ; Ark++);
         pValue = & tp->th_stuff[Ark+1];
-        for (Ark++ ; Ark<TFTP_SEGSIZE && tp->th_stuff[Ark]!=0 ; Ark++); // pass value
-		// keyword or value beyond limits : do not use
-		if (Ark>=TFTP_SEGSIZE || tp->th_stuff[Ark]!=0)
-			break;
+        for (Ark++ ; Ark<TFTP_SEGSIZE && tp->th_stuff[Ark]!=0 ; Ark++);
 
-        Ark++;
 
-        LOG (12, "Option <%s>: value <%s>", p, pValue);
-
-        if (!sSettings.bPXECompatibility && IS_OPT (p, TFTP_OPT_BLKSIZE))
-        {unsigned dwDataSize;
-            dwDataSize = atoi (pValue);
-            if (dwDataSize<TFTP_MINSEGSIZE)            // BLKSIZE < 8 --> refus
-                    LOG (9, "<%s> proposed by client %d, refused by Tftpd32", p, dwDataSize);
-            if (dwDataSize>TFTP_MAXSEGSIZE)            // BLKSIZE > 16384 --> 16384
-            {
-                    LOG (2, "<%s> proposed by client %d, reply with %d", p, dwDataSize, TFTP_MAXSEGSIZE);
-                    pTftp->s.dwPacketSize = TFTP_MAXSEGSIZE;
-            }
-            if (dwDataSize>=TFTP_MINSEGSIZE   && dwDataSize<=TFTP_MAXSEGSIZE)
-            {
-                    LOG (9, "<%s> changed to <%s>", p, pValue);
-                    pTftp->s.dwPacketSize = dwDataSize;
-            }
-            if (dwDataSize>=TFTP_MINSEGSIZE)
-            {
-                lstrcpy (pAck, p),                        pAck += lstrlen (pAck)+1;
-                wsprintf (pAck, "%d", pTftp->s.dwPacketSize), pAck += lstrlen (pAck)+1;
-                bOptionsAccepted = TRUE;
-            }
-       }  // blksize options
-
-       if (!sSettings.bPXECompatibility  &&  IS_OPT (p, TFTP_OPT_TIMEOUT))
-       {unsigned dwTimeout;
-            dwTimeout = atoi (pValue);
-            if (dwTimeout>=1   && dwTimeout<=255)  // RFCs values
-            {
-                LOG (9, "<%s> changed to <%s>", p, pValue);
-                lstrcpy (pAck, p),      pAck += lstrlen (pAck)+1;
-                lstrcpy (pAck, pValue), pAck += lstrlen (pAck)+1;
-                bOptionsAccepted = TRUE;
-                pTftp->s.dwTimeout = dwTimeout;
-            }
-        }  // timeout options
-
-        if (IS_OPT (p, TFTP_OPT_TSIZE))
+        if (Ark<TFTP_SEGSIZE && tp->th_stuff[Ark] == 0)
         {
-            lstrcpy (pAck, p), pAck += lstrlen (p)+1;
-            // vérue si read request -> on envoie la taille du fichier
-            if (opcode==TFTP_RRQ)
-            {
-                wsprintf (pAck, "%d", pTftp->st.dwTransferSize);
-                pAck += lstrlen (pAck)+1;
-                pTftp->s.dwFileSize = pTftp->st.dwTransferSize;
-            }
-            else
-            {
-                lstrcpy (pAck, pValue),     pAck += lstrlen (pAck)+1;
-                pTftp->s.dwFileSize = pTftp->st.dwTransferSize = atoi (pValue); // Trust client
-            }
+            LOG (12, "Option <%s>: value <%s>", p, pValue);
 
-            LOG (10, "<%s> changed to <%u>", p, pTftp->st.dwTransferSize);
-            bOptionsAccepted = TRUE;
-        }  // file size options
-
-		// experimental port option
-		if (sSettings.bPortOption  &&  IS_OPT (p, TFTP_OPT_PORT))
-		{SOCKADDR_STORAGE   sa;
-			int dummy = sizeof sa;
-				// get chosen port for transfer
-			    if (getsockname (pTftp->r.skt, (struct sockaddr *) & sa, & dummy)>=0)
-				{char szServ[NI_MAXSERV];
-			        getnameinfo ( (struct sockaddr *) & sa, sizeof sa, NULL, 0, szServ, sizeof szServ, NI_NUMERICSERV);
-					LogToMonitor ("using udpport option --> %s", szServ);
-                    lstrcpy (pAck, p), pAck += lstrlen (p)+1;
-					wsprintf ( pAck, "%d", htons (atoi (szServ)) );
-					pAck += lstrlen (pAck)+1;
-					pTftp->c.nOAckPort = sSettings.Port;
+            if (!sSettings.bPXECompatibility && IS_OPT (p, TFTP_OPT_BLKSIZE))
+            {unsigned dwDataSize;
+                dwDataSize = atoi (pValue);
+                if (dwDataSize<TFTP_MINSEGSIZE)            // BLKSIZE < 8 --> refus
+                     LOG (9, "<%s> proposed by client %d, refused by Tftpd32", p, dwDataSize);
+                if (dwDataSize>TFTP_MAXSEGSIZE)            // BLKSIZE > 16384 --> 16384
+                {
+                     LOG (2, "<%s> proposed by client %d, reply with %d", p, dwDataSize, TFTP_MAXSEGSIZE);
+                     pTftp->s.dwPacketSize = TFTP_MAXSEGSIZE;
+                }
+                if (dwDataSize>=TFTP_MINSEGSIZE   && dwDataSize<=TFTP_MAXSEGSIZE)
+                {
+                     LOG (9, "<%s> changed to <%s>", p, pValue);
+                     pTftp->s.dwPacketSize = dwDataSize;
+                }
+                if (dwDataSize>=TFTP_MINSEGSIZE)
+                {
+                    lstrcpy (pAck, p),                        pAck += lstrlen (pAck)+1;
+                    wsprintf (pAck, "%d", pTftp->s.dwPacketSize), pAck += lstrlen (pAck)+1;
                     bOptionsAccepted = TRUE;
-				}
+                }
+             }  // blksize options
 
-		 } // port option
+             if (!sSettings.bPXECompatibility  &&  IS_OPT (p, TFTP_OPT_TIMEOUT))
+             {unsigned dwTimeout;
+                dwTimeout = atoi (pValue);
+                if (dwTimeout>=1   && dwTimeout<=255)  // RFCs values
+                {
+                    LOG (9, "<%s> changed to <%s>", p, pValue);
+                    lstrcpy (pAck, p),      pAck += lstrlen (pAck)+1;
+                    lstrcpy (pAck, pValue), pAck += lstrlen (pAck)+1;
+                    bOptionsAccepted = TRUE;
+                    pTftp->s.dwTimeout = dwTimeout;
+                }
+             }  // timeout options
 
+             if (IS_OPT (p, TFTP_OPT_TSIZE))
+             {
+                lstrcpy (pAck, p), pAck += lstrlen (p)+1;
+                // vérue si read request -> on envoie la taille du fichier
+                if (opcode==TFTP_RRQ)
+                {
+                    wsprintf (pAck, "%d", pTftp->st.dwTransferSize);
+                    pAck += lstrlen (pAck)+1;
+                    pTftp->s.dwFileSize = pTftp->st.dwTransferSize;
+                }
+                else
+                {
+                    lstrcpy (pAck, pValue),     pAck += lstrlen (pAck)+1;
+                    pTftp->s.dwFileSize = pTftp->st.dwTransferSize = atoi (pValue); // Trust client
+                }
+
+                LOG (10, "<%s> changed to <%u>", p, pTftp->st.dwTransferSize);
+                bOptionsAccepted = TRUE;
+             }  // file size options
+
+			 // experimental port option
+			 if (sSettings.bPortOption  &&  IS_OPT (p, TFTP_OPT_PORT))
+			 {struct sockaddr_in sa;
+			  int dummy = sizeof sa;
+				 // get chosen port for transfer
+			     if (getsockname (pTftp->r.skt, & sa, & dummy)>=0)
+				 {
+					 LogToMonitor ("using udpport option --> %d", htons (sa.sin_port));
+                     lstrcpy (pAck, p), pAck += lstrlen (p)+1;
+					 wsprintf (pAck, "%d", htons (sa.sin_port));
+					 pAck += lstrlen (pAck)+1;
+					 pTftp->c.nOAckPort = sSettings.Port;
+                     bOptionsAccepted = TRUE;
+				 }
+			 } // port option
+
+#ifdef MTFTPD32
+             // multicast
+             if (sSettings.szMCastAddr[0]!=0 && IS_OPT (p, TFTP_OPT_MCAST))
+             {
+                if (opcode!=TFTP_RRQ)   // MCAST option is only defined for download
+                {
+                       nak (pTftp, EACCESS);
+                       return  CNX_FAILED;
+                }
+
+                lstrcpy (pAck, p),      pAck += lstrlen (pAck)+1;
+                pAck += wsprintf (pAck, "%s,%d,1",sSettings.szMCastAddr, sSettings.dwMCastPort) +1;
+                bOptionsAccepted = TRUE;
+             }
+#endif
+
+        }  // still inside the connect packet
     } // for all otptions
 
     // bOptionsAccepted is TRUE if at least one option is accepted -> an OACK is to be sent
@@ -577,7 +583,7 @@ return Rc;
 /////////////////////////////
 // send the OACK packet
 /////////////////////////////
-static int TftpSendOack (struct LL_TftpInfo *pTftp)
+int TftpSendOack (struct LL_TftpInfo *pTftp)
 {
 int Rc;
 
@@ -589,14 +595,11 @@ int Rc;
         LOG (10, "send OACK %d bytes", pTftp->c.dwBytes);
 		// should OACk be sent on a specifi port (option udpport) ?
 		if (pTftp->c.nOAckPort != 0)
- 		     Rc = UdpSend (  pTftp->c.nOAckPort, 
-							(struct sockaddr *) & pTftp->b.from, sizeof pTftp->b.from, 
-							pTftp->b.ackbuf, pTftp->c.dwBytes);
+ 		     Rc = UdpSend (pTftp->c.nOAckPort, &pTftp->b.from, pTftp->b.ackbuf, pTftp->c.dwBytes);
 		else // use file transfer socket 
 			 Rc = send (pTftp->r.skt, pTftp->b.ackbuf, pTftp->c.dwBytes , 0);
         if (Rc<0   || (unsigned) Rc != pTftp->c.dwBytes )
         {
-			Rc = GetLastError ();
             LOG (0, "send : Error %d", WSAGetLastError ());
             return FALSE;
         }
@@ -615,7 +618,7 @@ return TRUE;        // job done
 /////////////////////////////
 // display report after successfull end of transfer
 /////////////////////////////
-static void TftpEndOfTransfer (struct LL_TftpInfo *pTftp)
+void TftpEndOfTransfer (struct LL_TftpInfo *pTftp)
 {
 struct tftphdr *tp;
 int nBlock;
@@ -638,7 +641,6 @@ int nBlock;
 } // TftpEndOfTransfer
 
 
-// ReportNewTrf can be called from tftp_main.
 int ReportNewTrf (const struct LL_TftpInfo *pTftp)
 {
 struct S_TftpTrfNew gui_msg;
@@ -662,19 +664,17 @@ LogToMonitor ("starting transfer %d\n", pTftp->tm.dwTransferId);
 return Rc;    
 } // ReportNewTrf 
 
-static int ReportEndTrf (const struct LL_TftpInfo *pTftp)
+int ReportEndTrf (const struct LL_TftpInfo *pTftp)
 {
 struct S_TftpTrfEnd gui_msg;
-int  Rc;
 LogToMonitor ("end of transfer %d\n", pTftp->tm.dwTransferId);
     gui_msg.dwTransferId  = pTftp->tm.dwTransferId;
 	gui_msg.stat          = pTftp->st;
-    Rc = SendMsgRequest (  C_TFTP_TRF_END, 
+return  SendMsgRequest (  C_TFTP_TRF_END, 
 						  (void *) & gui_msg, 
 						   sizeof gui_msg, 
 						   TRUE,		// block thread until msg sent
 					       FALSE );		// if no GUI return	
-return Rc;
 } // ReportEndTrf
 
  //////////////////////////////////////////////////////////////////////////
@@ -688,7 +688,7 @@ return Rc;
     ////////////////////////
     //   DOWNLOAD (From Server to client)
     ////////////////////////
-static int TftpSendFile (struct LL_TftpInfo *pTftp)
+int TftpSendFile (struct LL_TftpInfo *pTftp)
 {
 int Rc;
 struct tftphdr *tp;
@@ -707,8 +707,6 @@ struct tftphdr *tp;
  // pTftp->c.nCount is the last block sent
 
     pTftp->c.nTimeOut = pTftp->c.nRetries = 0 ;
-	// for the stats, early acknowledgements are already sent
-	pTftp->st.dwTotalBytes = pTftp->s.ExtraWinSize * pTftp->s.dwPacketSize;
     do
     {
          // On Timeout:  cancel anticipation window
@@ -733,12 +731,15 @@ struct tftphdr *tp;
               tp->th_opcode = htons (TFTP_DATA);
               tp->th_block  = htons ( (unsigned short) pTftp->c.nLastToSend );
               DoDebugSendBlock (pTftp); // empty ifndef DEBUG
+              if (pTftp->c.bMCast)
+                  Rc = TftpMCastSend (pTftp);
+              else
 #ifdef TEST_DROPP
     if (pTftp->c.nRetries<3  &&  pTftp->c.nCount==4)
         { LOG (1, "dropping 4th packet"), Rc=pTftp->c.dwBytes + TFTP_DATA_HEADERSIZE; }
     else
 #endif
-              Rc = send (pTftp->r.skt, pTftp->b.buf, pTftp->c.dwBytes + TFTP_DATA_HEADERSIZE, 0);
+                  Rc = send (pTftp->r.skt, pTftp->b.buf, pTftp->c.dwBytes + TFTP_DATA_HEADERSIZE, 0);
 
               if (Rc<0 || (unsigned) Rc != pTftp->c.dwBytes + TFTP_DATA_HEADERSIZE )
                     return TftpSysError (pTftp, EUNDEF, "send");
@@ -759,7 +760,7 @@ struct tftphdr *tp;
              //////////////////////////////////////////////
              // read the message
              //////////////////////////////////////////////
-             if (Rc<TFTP_ACK_HEADERSIZE)
+             if (Rc<sizeof TFTP_ACK_HEADERSIZE)
              {
                   LOG (1, "rcvd packet too short");
              }
@@ -791,7 +792,7 @@ struct tftphdr *tp;
                           &&  ntohs (tp->th_block) == (unsigned short) (pTftp->c.nCount-1) )
                       {
                             LOG (1, "Ack block %d ignored (received twice)",
-                                 (unsigned short) (pTftp->c.nCount - 1), NULL);
+                                 (unsigned short) pTftp->c.nCount, NULL);
                       }
                       // Added 29 June 2006: discard an ack of a block which has still not been sent
                       // only for unicast transfers
@@ -855,7 +856,7 @@ return TRUE;
     ////////////////////////
     //   UPLOAD (From client to Server)
     ////////////////////////
-static int TftpRecvFile (struct LL_TftpInfo *pTftp, BOOL bOACK)
+int TftpRecvFile (struct LL_TftpInfo *pTftp, BOOL bOACK)
 {
 int Rc;
 struct tftphdr *tp;
@@ -988,6 +989,7 @@ DWORD WINAPI StartTftpTransfer (LPVOID pThreadArgs)
 struct LL_TftpInfo *pTftp = (struct LL_TftpInfo *) pThreadArgs;
 int              Rc;
 BOOL             bSuccess;
+struct sockaddr_in s_in = {AF_INET, 0, 0 };
 
    // do not let die the first thread (avoid the memory leak)
    do
@@ -1009,46 +1011,32 @@ BOOL             bSuccess;
      SetThreadPriority (pTftp->tm.dwThreadHandle, THREAD_PRIORITY_BELOW_NORMAL);
 
      // create a socket for the dialog
-     // pTftp->b.from.sin_family = AF_INET;
-	 if (  pTftp->b.from.ss_family == AF_INET6  &&  IN6_IS_ADDR_V4MAPPED ( & (* (struct sockaddr_in6 *) & pTftp->b.from ).sin6_addr )  )
-	 {
-		 // If ingress conection is IPv4 mapped use IPv4 sockets for answer
-		 // Hack copied from Apache
-		 struct sockaddr_in in ;
-		 memset (& in, 0, sizeof in);
-		 in.sin_family = AF_INET;
-		 in.sin_addr.s_addr =  ((DWORD *) (* (struct sockaddr_in6 *) & pTftp->b.from).sin6_addr.s6_bytes) [3];
-		 in.sin_port        = (* (struct sockaddr_in6 *) & pTftp->b.from).sin6_port;
-		 * (struct sockaddr_in *) & pTftp->b.from = in;
-	 }
+     pTftp->b.from.sin_family = AF_INET;
 
+     if ( (pTftp->r.skt = socket(AF_INET, SOCK_DGRAM, 0) ) == INVALID_SOCKET)
+     {
+            LOG (0, "Error : socket returns %d: <%s>",
+                     GetLastError(),LastErrorText());
+     }
+     else if ( TftpBind (pTftp->r.skt, sSettings.nTftpLowPort, sSettings.nTftpHighPort) != 0 )
+     {
 
-	 if ( (pTftp->r.skt = socket(pTftp->b.from.ss_family, SOCK_DGRAM, 0) ) == INVALID_SOCKET)
-     {
-		  Rc = GetLastError ();
-          LOG (0, "Error : socket returns %d: <%s>", Rc, LastErrorText());
+            LOG (0, "Error : bind returns %d: <%s>",
+                     GetLastError(),LastErrorText());
      }
-     else if ( TftpBind (pTftp->r.skt, pTftp,  sSettings.nTftpLowPort, sSettings.nTftpHighPort) != 0 )
+     else if ( connect(pTftp->r.skt, (struct sockaddr *)&pTftp->b.from, sizeof pTftp->b.from) != 0 )
      {
-		  Rc = GetLastError ();
-          LOG (0, "Error : bind returns %d: <%s>", Rc, LastErrorText());
-     }
-     else if ( (Rc=connect(pTftp->r.skt, (struct sockaddr *) & pTftp->b.from, sizeof pTftp->b.from)) != 0 )
-     {
-		  Rc = GetLastError ();
-          LOG (0, "Error : connect returns %d: <%s>", Rc, LastErrorText());
-          Sleep (1000);
+          LOG (0, "Error : connect returns %d: <%s>", GetLastError(),LastErrorText());
+          Sleep (10000);
      }
          //////////////////////////////////
          // Parse the RRQ/WRQ request
          /////////////////////////////////
      else if ( (Rc = DecodConnectData (pTftp)) !=  CNX_FAILED )
-     {struct sockaddr_storage s_in;
+     {struct sockaddr_in s_in;
       unsigned s_len = sizeof s_in;
-	  char szServ[NI_MAXSERV];
          getsockname( pTftp->r.skt, (struct sockaddr *) & s_in, & s_len);
-		 getnameinfo ( (struct sockaddr *) & s_in, sizeof s_in, NULL, 0, szServ, sizeof szServ, NI_NUMERICSERV);
-         LOG (1, "Using local port %s", szServ);
+         LOG (1, "Using local port %d", htons (s_in.sin_port));
 
 		 pTftp->st.ret_code =  TFTP_TRF_RUNNING;
          ReportNewTrf (pTftp);
@@ -1096,7 +1084,7 @@ LogToMonitor ("worker thread leaving %d\n", GetCurrentThreadId () );
 
   pTftp->tm.bActive = FALSE;
   SetEvent ( tThreads[TH_TFTP].hEv ); 
-  Sleep (250);
+  Sleep (1000);
  _endthread ();
 return 0;
 } /* StartTftpTransfer */

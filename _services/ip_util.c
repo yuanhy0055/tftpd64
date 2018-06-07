@@ -18,8 +18,6 @@
 #  define sscanf_s sscanf
 #endif
 
-
-
 //quick smart increment function to avoid addresses ending in 0 or 255.
 //in is in network order, but what is returned is in host order
 unsigned long AddrInc(struct in_addr in)
@@ -36,8 +34,8 @@ unsigned long AddrInc(struct in_addr in)
 //Returns true if the address would fit in the pool
 int AddrFitsPool(struct in_addr* addr)
 {
-   return ntohl(addr->s_addr) >= ntohl (inet_addr(sParamDHCP.szAddr))
-          &&  ntohl (addr->s_addr) <  ntohl (inet_addr(sParamDHCP.szAddr)) + sParamDHCP.nPoolSize;
+   return ntohl(addr->s_addr) >= ntohl (sParamDHCP.dwAddr.s_addr)
+          &&  ntohl (addr->s_addr) <  ntohl (sParamDHCP.dwAddr.s_addr) + sParamDHCP.nPoolSize;
 }
 
 // Return TRUE if 2 IP addresses are in the same subnet

@@ -79,8 +79,6 @@ void AsyncSaveKeyBckgProc (void *param)
 {
 struct S_ini *pmsg;
     LL_Create (LL_ID_SETTINGS, 500);
-	tThreads[TH_ASYNCSAVEKEY].bInit = TRUE;		// inits OK
-
     do
     {
         WaitForSingleObject (tThreads[TH_ASYNCSAVEKEY].hEv, INFINITE);

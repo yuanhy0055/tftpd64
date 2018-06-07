@@ -72,38 +72,8 @@ void __cdecl LOG (int DebugLevel, const char *szFmt, ...)
 va_list  marker;
 char     szBuf [LOGSIZE], *lpTxt=szBuf;
 SYSTEMTIME sTime;
-int ThreadPriority;
-time_t dNow;
-static struct S_Pacing
-{
-	time_t time;
-	int     count;
-} sPacing;
 
     if (DebugLevel > sSettings.LogLvl  || tThreads[TH_CONSOLE].hEv==INVALID_HANDLE_VALUE) return;
-
-    // PJO 2017: add a poor man pacing to avoid flooding GUI
-#define PER_THREAD_PER_SEC_MAX_MSG  100
-	time (&dNow);
-	if (dNow == sPacing.time)
-	{
-		  ++sPacing.count;
-		  if ( sPacing.count> PER_THREAD_PER_SEC_MAX_MSG/2 )
-		  {
-			// let the GUI run  (otherwise it may either freeze the GUI or create a buffer overflow)
-			// bug found by Peter Baris
-			 ThreadPriority = GetThreadPriority (GetCurrentThread());
-			 SetThreadPriority (GetCurrentThread(), THREAD_PRIORITY_IDLE);
-			 Sleep (1);	// pass the hand
-			 SetThreadPriority (GetCurrentThread(), ThreadPriority);
-		  }
-		  if ( sPacing.count> PER_THREAD_PER_SEC_MAX_MSG )    return;
-	}
-	else
-    {     
-		  sPacing.time = dNow; 
-		  sPacing.count = 0;
-	}
 
     // format the string with wsprintf and timestamp
     szBuf [sizeof szBuf - 1] = 0; 
@@ -127,14 +97,15 @@ static struct S_Pacing
 #endif
     lpTxt += sizeof (" [00/00 00:00:00.000]");
 
-	// push the message into queue
+    // push the message into queue
     SendMsgRequest ( C_LOG, szBuf, (int) (lpTxt - szBuf), FALSE, FALSE ); 
+    
 	// Add the log into the file
 	if (sSettings.szTftpLogFile[0]!=0)
 	{
 		AppendToFile (sSettings.szTftpLogFile, szBuf, (int) (lpTxt - szBuf - 1)); 
 	} // Log into file
-	
+
 } // LOG
 
 
@@ -189,6 +160,3 @@ char     szBuf [LOGSIZE];
     SendMsgRequest ( C_WARNING, szBuf, lstrlen (szBuf), FALSE, FALSE ); 
 	va_end (marker);
 } // SVC_WARNING
-
-
-

@@ -62,85 +62,61 @@ void LL_Destroy (int id)
 // AddItem    
 int LL_PushTypedMsg (int id, const void *lpData, int dwSize, int type)
 {
-struct savemsg* pmsg ;
+struct savemsg* pmsg = malloc (sizeof (struct savemsg));
 int    msg_id;
-int    Rc;
-int Try = 0, bSuccess=FALSE;
-#define MAX_TRIES  5
+	if(!pmsg)
+		return 0;
+        
+    pmsg->data = malloc (dwSize);
+    pmsg->size = dwSize;
+    pmsg->next = NULL;
+    memcpy (pmsg->data, lpData, dwSize);
+    pmsg->type = type;
 
-
-	while (! bSuccess  &&  ++Try < MAX_TRIES)
-	{
-		Rc = WaitForSingleObject(tLL[id].msglock, INFINITE);
-		assert (Rc==WAIT_OBJECT_0);
+	WaitForSingleObject( tLL[id].msglock, INFINITE);
     
-		// queue full ?
-		if (tLL[id].nb_items < tLL[id].max_items - 1)
+    // attribute unique id to the msg
+    pmsg->msg_id = msg_id = tLL[id].cur_msg_id++;
+	++tLL[id].nb_items;
+    assert (tLL[id].nb_items < tLL[id].max_items);
+
+    //Assumes you have the lock
+    if(! tLL[id].phead)
+		tLL[id].phead = tLL[id].ptail = pmsg;
+	else
+	{
+		if(! tLL[id].ptail) //Shouldn't be hit, but just in case
 		{
-			// one more item
-			++tLL[id].nb_items;
-
-			pmsg = malloc(sizeof(struct savemsg));
-			assert(pmsg != NULL);
-
-			pmsg->data = malloc(dwSize);
-			pmsg->size = dwSize;
-			pmsg->next = NULL;
-			memcpy(pmsg->data, lpData, dwSize);
-			pmsg->type = type;
-			// attribute unique id to the msg
-			pmsg->msg_id = msg_id = tLL[id].cur_msg_id++;
-
-
-			// Assumes you have the lock
-			if (!tLL[id].phead)
-				tLL[id].phead = tLL[id].ptail = pmsg;
-			else
+			struct savemsg* ptmp = tLL[id].phead;
+			while(ptmp)
 			{
-				if (!tLL[id].ptail) //Shouldn't be hit, but just in case
-				{
-					struct savemsg* ptmp = tLL[id].phead;
-					while (ptmp)
-					{
-						tLL[id].ptail = ptmp;
-						ptmp = ptmp->next;
-					}
-				}
-
-				tLL[id].ptail->next = pmsg;
-				tLL[id].ptail = pmsg;
+				tLL[id].ptail = ptmp;
+				ptmp = ptmp->next;
 			}
-			bSuccess = TRUE;
-		} // queue is not full
-		else
-		{
-			ReleaseMutex(tLL[id].msglock);
-			OutputDebugString("--------- Log queue full\n");
-			Sleep(50);
 		}
-	} // 5 tries
 
-	ReleaseMutex(tLL[id].msglock);
+		tLL[id].ptail->next = pmsg;
+		tLL[id].ptail = pmsg;
+	}
+    
+  	ReleaseMutex( tLL[id].msglock);
 
     // can not return directly pmsg->msg_id
     // since it may have already been freed
 return msg_id;
 } // LL_PushTypedMsg
 
-
 // Returns when the message queue is empty.  Useful for loading the ini file after a save
 void WaitForMsgQueueToFinish (int id)
 {
-struct savemsg* pmsg = tLL[id].phead;
-int Rc;
-    while (pmsg != NULL)
+struct savemsg* pmsg;
+    do
     {
-		Sleep(0);  // Pass the hand to other threads for the queue to empty        
-        Rc = WaitForSingleObject(tLL[id].msglock, INFINITE);
-		assert (Rc==WAIT_OBJECT_0);
+        Sleep(50);  //Give some time for the queue to empty
+        WaitForSingleObject(tLL[id].msglock, INFINITE);
         pmsg = tLL[id].phead;
         ReleaseMutex (tLL[id].msglock);
-    } ;
+    } while (pmsg);
 }  // WaitForMsgQueueToFinish()
 
 
@@ -150,12 +126,10 @@ void *LL_PopTypedMsg (int id, int *plen, int *pmsg_id, int *ptype)
 {
 struct savemsg *pcur;
 void           *lpData;
-int             Rc;
 
     if (tLL[id].phead==NULL) return NULL;
 
-	Rc = WaitForSingleObject(tLL[id].msglock, INFINITE);
-    assert (Rc==WAIT_OBJECT_0);
+	WaitForSingleObject(tLL[id].msglock, INFINITE);
 
     pcur = tLL[id].phead;
 	if(tLL[id].phead)

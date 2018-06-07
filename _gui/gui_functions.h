@@ -44,11 +44,6 @@ enum {
 
 	   WM_CLOSE_2ND,
 	   WM_CLOSE_3RD,
-	   
-	   WM_ESC_EDITBOX,
-	   WM_TAB_EDITBOX,
-	   WM_ENTER_EDITBOX,
-	   
        WM_ANYBODY_HERE =(WM_APP + 591),
     };  // main window
 
@@ -131,21 +126,19 @@ enum {
      
 /////////////////////////////////////////////////////////
 // Windows and Dialogs
-// long CALLBACK TftpAddIPProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-LRESULT  CALLBACK AboutProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-LRESULT  CALLBACK TftpClientProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-LRESULT  CALLBACK SettingsProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-LRESULT  CALLBACK ShDirProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-LRESULT  CALLBACK BrowseProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-LRESULT  CALLBACK MsgBoxCbk (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-LRESULT  CALLBACK AsyncSaveKeyProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-LRESULT  CALLBACK WndProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+// long CALLBACK TftpAddIPProc (HWND hWnd, UINT message, WPARAM wParam, LONG lParam);
+int  CALLBACK AboutProc (HWND hWnd, UINT message, WPARAM wParam, LONG lParam);
+int  CALLBACK TftpClientProc (HWND hWnd, UINT message, WPARAM wParam, LONG lParam);
+int  CALLBACK SettingsProc (HWND hWnd, UINT message, WPARAM wParam, LONG lParam);
+int  CALLBACK ShDirProc (HWND hWnd, UINT message, WPARAM wParam, LONG lParam);
+int  CALLBACK BrowseProc (HWND hWnd, UINT message, WPARAM wParam, LONG lParam);
+long CALLBACK MsgBoxCbk (HWND hWnd, UINT message, WPARAM wParam, LONG lParam);
+long CALLBACK AsyncSaveKeyProc (HWND hWnd, UINT message, WPARAM wParam, LONG lParam);
+int CALLBACK WndProc (HWND hWnd, UINT message, WPARAM wParam, LONG lParam);
 
 
-LRESULT  TR_ChangeTabControl (HWND hDlgWnd);	
-int  TR_ChgTabControl (HWND hDlgWnd, int nService, int nStatus); // open one sub window
-int TR_OpenAllTabs (HWND hDlgWnd, int nService);	// open all sub windows
-DWORD TR_GetCurrentTab (HWND hDlgWnd);		// get service of current tab
+int  TR_ChangeTabControl (HWND hDlgWnd);
+int  TR_InitTabControl (HWND hDlgWnd);
 
 int  FillCBLocalIP (HWND hCBWnd, BOOL bShowPassive, const char *szAddress);
 BOOL Tftpd32RetrieveWindowPos (HWND hMainWnd);
@@ -172,7 +165,7 @@ char *GetActiveDirectory (char *szActiveDirectory, int nSize);
 int StartExplorer (void);
 
 // gui_main 
-int ChangeIPAddress (HWND hWnd, struct S_IPAddressList *pIf);
+int ChangeIPAddress (HWND hWnd, int nb_addr, struct S_IPAddressEntry *ent);
 
 
 // gui_bootpd
@@ -192,7 +185,7 @@ void Gui_UpdateGaugeWindow (const struct S_TftpGui *pTftpGui, time_t dNow);
 
 // exported by gui_recvmsg.c
 const struct S_TftpGui *Gui_GetFirstGuiItem (void);
-int Gui_GetMessage (HWND hWnd, SOCKET sService, int bBlocking, int nMsgType);
+int Gui_GetMessage (HWND hWnd, SOCKET sService, int bBlocking);
 int Gui_AbortTftpTransfer (SOCKET sService, DWORD dwTransferId);
 
 
@@ -202,16 +195,13 @@ void LB_LOG (HWND hListBox, const char *szTxt);
 // from gui_tftpd.c
 long CALLBACK TftpProc (HWND hWnd, UINT message, WPARAM wParam, LONG lParam);
 int Gui_TftpReporting (HWND hListV, const struct S_TftpGui *pTftpGuiFirst);
-BOOL GuiIsActiveTFTPTransfer (HWND hMainWnd);
+
 
 // from gui_dialog
 int IsGuiConnectedToRemoteService (void);
 
 int Gui_AbortTftpTransfer (SOCKET sService, DWORD dwTransferId);
 int Gui_StopTftpService (SOCKET sService);
-int Gui_StopDnsService (SOCKET sService);
-int Gui_StopSyslogService (SOCKET sService);
-int Gui_StopSntpService (SOCKET sService);
 
 int Gui_StopDhcpService (SOCKET sService);
 int Gui_StopAllServices (SOCKET sService);
@@ -228,8 +218,8 @@ int Gui_SuppressDHCPAllocation (SOCKET sService, unsigned ip);
 int Gui_DestroySettings (SOCKET sService);
 int Gui_RequestIPInterfaces (SOCKET sService);
 int Gui_RequestListDirectory (SOCKET sService);
-int Gui_RequestFullReport (SOCKET sService);
-int Gui_GetMessage (HWND hWnd, SOCKET sService, int bBlocking, int nMsgType);
+
+int Gui_GetMessage (HWND hWnd, SOCKET sService, int bBlocking);
 
 // gui_bootpd_settings
 int Gui_LoadDHCPConfig (HWND hWnd);

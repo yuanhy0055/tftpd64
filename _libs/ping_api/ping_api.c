@@ -58,11 +58,7 @@ ICMPHDR                *pIcmpReply = & echoReply.echoRequest.icmpHdr;
 
     // Create a Raw socket
    rawSocket = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-   if (rawSocket == SOCKET_ERROR) 
-   {
-	   int Rc = WSAGetLastError();
-	   return Rc==WSAEACCES ? PINGAPI_PRIVERROR : PINGAPI_INITERROR;
-   }
+   if (rawSocket == SOCKET_ERROR)  return WSAGetLastError()==WSAEACCES ? PINGAPI_PRIVERROR : PINGAPI_INITERROR;
 
     // init TTL
     if (    pTTL!=NULL
@@ -117,13 +113,8 @@ ICMPHDR                *pIcmpReply = & echoReply.echoRequest.icmpHdr;
 
         nRet = select(1, &readfds, NULL, NULL, &Timeout) ;
         if (nRet == 0)             { closesocket (rawSocket);  return PINGAPI_TIMEOUT; }
-        if (nRet == SOCKET_ERROR)
-		{  
-			nRet = WSAGetLastError();
-			closesocket (rawSocket) ;
-			WSASetLastError (nRet);
-			return PINGAPI_SOCKERROR;
-		}
+        if (nRet == SOCKET_ERROR)  { closesocket (rawSocket);  return PINGAPI_SOCKERROR; }
+
         // Receive reply
         // Receive the echo reply
         nRet = recvfrom(rawSocket,                  // socket

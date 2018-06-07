@@ -56,7 +56,6 @@ int                   Rc;
          return FALSE;
      }
 
-
 	 // start Services through a thread
 	 // the thread start the console, wait for 200ms
 	 // (time to start the GUI) then starts the services
@@ -64,9 +63,7 @@ int                   Rc;
 	 // when the console/GUI socket is connected.
 	 _beginthread ( StartTftpd32Services, 0, NULL );
 	 // let the console opens its socket
-	 // Pause needs to be higher than the one in StartMultiWorkerThreads (start_threads.c)
-	 // otherwise DHCP settings will not be loaded in GUI
-	 //Sleep (500);
+	 Sleep (100);
      // opens Gui
      GuiMain (hInstance, hPrevInstance,lpszCmdLine, nCmdShow);
 

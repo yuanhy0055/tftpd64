@@ -44,9 +44,7 @@ static HANDLE hMsgRequestSemaf = INVALID_HANDLE_VALUE;
 // get and set console status
 enum eGuiStatus  { NOT_CONNECTED=17, CONNECTED };
 static int gGuiStatus = NOT_CONNECTED;
-static void SetGuiStatus (int status) 
-	{ LogToMonitor ("Console %sconnected", status==CONNECTED ? "" : "dis"); 
-	  gGuiStatus = status; }
+static void SetGuiStatus (int status) { gGuiStatus = status; }
 static int  GetGuiStatus (void)       { return gGuiStatus;   }
 
 
@@ -68,23 +66,16 @@ void *p;
 int SendMsgRequest (int type, const void *msg_stuff, int size, BOOL bBlocking, BOOL bRetain)
 {
 int Rc;
-static int InternalSemaf = FALSE;
 
 	// 3.34 : check if GUI is listening to notification
 	// added for service edition
-	// 4.05 (modify start order --> wait for console
-#ifdef SERVICE_EDITION
 	if (GetGuiStatus () == NOT_CONNECTED) return 0;
-#else
-	while (GetGuiStatus () == NOT_CONNECTED) { Sleep (100); } 
-#endif
-
-    Rc = WaitForSingleObject( hMsgRequestSemaf, INFINITE );
-	assert (Rc==WAIT_OBJECT_0);
 
     if (bBlocking &&  hMsgRequestSemaf!=INVALID_HANDLE_VALUE)
 	{
         // Request the lock to ensure all other threads are waiting
+        Rc = WaitForSingleObject( hMsgRequestSemaf, INFINITE );
+		assert (Rc==WAIT_OBJECT_0);
 		if (Rc==WAIT_OBJECT_0)
 		{
 			WaitForMsgQueueToFinish (LL_ID_MSG_TO_GUI);
@@ -94,16 +85,13 @@ static int InternalSemaf = FALSE;
 			WakeUpThread (TH_CONSOLE);
 			Rc = WaitForSingleObject ( hEvMsgSent, INFINITE );
 			assert (Rc==WAIT_OBJECT_0);
-
-			WaitForMsgQueueToFinish (LL_ID_MSG_TO_GUI);
 			// it is done
+			Rc = ReleaseMutex (hMsgRequestSemaf);
+			assert (Rc!=0);
 		}
 	}
 	else
 	{
-		// do not send message while blocking message is in progress
-		while (InternalSemaf)
-			Sleep (1);
 		// if (bRetain)
 		{
 			// simply push the msg into the queue and signal event to the console
@@ -111,10 +99,6 @@ static int InternalSemaf = FALSE;
 			WakeUpThread (TH_CONSOLE);
 		}
 	}
-	
-	Rc = ReleaseMutex (hMsgRequestSemaf);
-	assert (Rc!=0);
-
 return 1;    
 } // SendMsgRequest
 
@@ -131,7 +115,7 @@ int   Rc;
 int   nLen;
 int   type;
 int   msg_id;
-int   bwatchdog=TRUE; // check that queue contains only one blocking message
+int   bwatchdog=TRUE;
 
     do
     {
@@ -147,7 +131,7 @@ int   bwatchdog=TRUE; // check that queue contains only one blocking message
 		   { assert (bwatchdog);
 		     Rc = SetEvent (hEv); 
 			 assert (Rc!=0);
-			 //bwatchdog = FALSE;
+			 bwatchdog = FALSE;
 		   }
         }
     }
@@ -204,7 +188,7 @@ LogToMonitor ("suspending services\n");
             
         case C_START :
 LogToMonitor ("starting services\n");
-			StartMultiWorkerThreads (TRUE);
+			StartWorkerThreads (TRUE);
             break;            
             
         case C_DHCP_RRQ_SETTINGS :
@@ -224,30 +208,13 @@ LogToMonitor ("storing new DHCP settings\n");
             
         case C_TFTP_WRQ_SETTINGS :
 LogToMonitor ("storing new TFTP settings\n");
-			{static struct S_RestartTable sRestart;
-			    sRestart.newservices = pmsg->u.tftp_settings.uServices;
-				sRestart.oldservices = sSettings.uServices;
-				sRestart.flapservices = 0;
-				if (   sSettings.Port != pmsg->u.tftp_settings.Port
-		            || lstrcmp (sSettings.szTftpLocalIP, pmsg->u.tftp_settings.szTftpLocalIP )!=0 )
-					sRestart.flapservices |= TFTPD32_TFTP_SERVER;
-				// restart syslog if its settings log has changed
-				if (     sSettings.uServices &  TFTPD32_SYSLOG_SERVER 
-					  && (   sSettings.bSyslogPipe != pmsg->u.tftp_settings.bSyslogPipe
-					      || strcmp(sSettings.szSyslogFile,pmsg->u.tftp_settings.szSyslogFile)!= 0 )
-				   )
-					 sRestart.flapservices |= TFTPD32_SYSLOG_SERVER;
-
             sSettings = pmsg->u.tftp_settings;
-
             if ( IsValidDirectory ( pmsg->u.tftp_settings.szBaseDirectory ) )
                     lstrcpyn ( sSettings.szWorkingDirectory, 
                                pmsg->u.tftp_settings.szBaseDirectory, 
                                sizeof sSettings.szWorkingDirectory );
-			_beginthread ( Tftpd32UpdateServices, 0, (void *) & sRestart );            
-			Tftpd32SaveSettings ();
-			}
-			break;
+            Tftpd32SaveSettings ();
+            break;
 
         case C_TFTP_RESTORE_DEFAULT_SETTINGS :
 LogToMonitor ("restore default settings\n");
@@ -296,12 +263,7 @@ LogToMonitor ("sending Directory content");
             SendDirectoryContent ();
             break;
 
-        case C_TFTP_GET_FULL_STAT :
-LogToMonitor ("sending Directory content");
-            ConsoleTftpGetStatistics ();
-            break;
-
-		default :
+        default :
 LogToMonitor ("Service received unknown message %d\n", pmsg->type);
             break;
 
@@ -314,18 +276,16 @@ return 1;
 // wait until GUI is connected
 SOCKET WaitForGuiConnection (void) 
 {
-static SOCKET     sListen = INVALID_SOCKET;
-SOCKET            sDlg    = INVALID_SOCKET;
-SOCKADDR_STORAGE  saSockAddr; /* specifications pour le Accept */
-int               nAddrLen = sizeof saSockAddr;
-int               Rc;
+SOCKET sListen = INVALID_SOCKET;
+SOCKET sDlg    = INVALID_SOCKET;
+struct sockaddr_in saSockAddr; /* specifications pour le Accept */
+int    nAddrLen = sizeof saSockAddr;
+int    Rc;
 
 	do
 	{
 		sSettings.uConsolePort = TFTPD32_TCP_PORT;
-		// sListen is static --> don't reopen 
-		if (sListen == INVALID_SOCKET)
-		   sListen = TcpGetListenSocket (AF_INET, "tftpd32", & sSettings.uConsolePort);
+		sListen = TcpGetListenSocket ("tftpd32", & sSettings.uConsolePort);
 #ifdef STANDALONE_EDITION
 		    // second chance (standalone edition):let the system choose its socket
 		    // pass the port nb through the sGuiSettings structure
@@ -333,7 +293,7 @@ int               Rc;
 		    if (sListen==INVALID_SOCKET && GetLastError()==WSAEADDRINUSE)
 		    {
 			    sGuiSettings.uConsolePort = 0;
-			    sListen = TcpGetListenSocket (AF_INET, NULL, & sGuiSettings.uConsolePort);
+			    sListen = TcpGetListenSocket (NULL, & sGuiSettings.uConsolePort);
 		    }
 #endif
 
@@ -361,11 +321,7 @@ int               Rc;
 			}
 			// free listening socket
 			WSACloseEvent (tEvents [0]);
-
-			// sListen socket no more necessary
-		    closesocket (sListen);  
-			sListen = INVALID_SOCKET;
-
+		    closesocket (sListen); 
 		} // sListen OK
 		if (sDlg==INVALID_SOCKET && tThreads[TH_CONSOLE].gRunning) Sleep (1000);
 	}
@@ -409,7 +365,7 @@ HANDLE tEvents [EV_NUMBER];
         // Verify Versions 
 				LogToMonitor ("Verify Console/GUI parameters\n");
 
-        Rc = TcpExchangeChallenge (sDlg, 0x56AE, CURRENT_PROTOCOL_VERSION,  NULL, sSettings.szConsolePwd);
+        Rc = TcpExchangeChallenge (sDlg, 0x56AE, CURRENT_PROTOCOL_VERSION,  sSettings.szConsolePwd);
         if ( Rc < 0 ) 
         {
             Sleep (1000);
@@ -418,7 +374,6 @@ HANDLE tEvents [EV_NUMBER];
 	LogToMonitor ( "Version check OK\n" );
 	SetGuiStatus (CONNECTED);
 
-
 	// Startup blocking service by creating
     // one event and one semaphore to code the blocking sendmsgrequest    
     hMsgRequestSemaf  = CreateMutex(NULL, 0, NULL);
@@ -426,7 +381,6 @@ HANDLE tEvents [EV_NUMBER];
     if (hMsgRequestSemaf==NULL)
         CMsgBox (NULL, "Can not create resource", APPLICATION, MB_OK | MB_ICONERROR);
 
-	tThreads[TH_CONSOLE].bInit = TRUE;		// inits OK
 
          // Create Socket Event 
         tEvents [EV_FROMGUI] = WSACreateEvent();

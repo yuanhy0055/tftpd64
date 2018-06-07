@@ -13,34 +13,6 @@
 
 enum E_fields { FD_PEER, FD_FILE, FD_START, FD_PROGRESS, FD_BYTES, FD_TOTAL, FD_TIMEOUT };
 
-// a transfer terminated but still displayed
-#define ZOMBIE_STATUS '.'
-
-///////////////////////////////
-// verify that all transfer are terminated
-// by listing list view
-///////////////////////////////
-BOOL GuiIsActiveTFTPTransfer ( HWND hMainWnd )
-{
-long lLen = 128;
-LVITEM lvItem;
-LRESULT lResult = 0;
-int     Ark;
-HWND    hLV = GetDlgItem (hMainWnd, IDC_LV_TFTP);
-char    szName [512];
-  
-   // scan the TFTP list view, if an item does not begin with '.' 
-   // a transfer is in progress
-   for ( Ark = ListView_GetItemCount (hLV) - 1 ;  Ark>=0 ;  Ark-- )
-   {
-	  // retrieve the field file
-      memset(&lvItem, 0, sizeof(LVITEM));
-	  ListView_GetItemText (hLV, Ark, FD_FILE, szName, sizeof szName); 
-      if (szName[0]!=ZOMBIE_STATUS) return TRUE;
-   }
-return FALSE;
-} // GuiIsActiveTFTPTransfer
-
 
 ////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -52,7 +24,7 @@ return FALSE;
 static int AddNewTftpItem (HWND hListV, const struct S_TftpGui *pTftpGui, int Pos)
 {
 LVITEM      LvItem;
-char        szTxt [512], szAddr[MAXLEN_IPv6], szServ[NI_MAXSERV] ;
+char        szTxt [512];
 int         itemPos;
 struct tm   ltime;
 char		cDel;
@@ -67,12 +39,8 @@ char		cDel;
     // LvItem.pszText = "";
     itemPos = ListView_InsertItem (hListV, & LvItem);
 
-	getnameinfo ( (LPSOCKADDR) & pTftpGui->stg_addr, sizeof (pTftpGui->stg_addr), 
-		           szAddr, sizeof szAddr, 
-				   szServ, sizeof szServ,
-				   NI_NUMERICHOST | AI_NUMERICSERV );
-
-    wsprintf (szTxt, "%s:%s", szAddr, szServ);
+    wsprintf (szTxt, "%s:%d", inet_ntoa (pTftpGui->from_addr.sin_addr), 
+                        ntohs (pTftpGui->from_addr.sin_port));
 LogToMonitor ("CREATING item <%s>\n", szTxt);
     ListView_SetItemText (hListV, itemPos, FD_PEER, szTxt);
 
@@ -132,15 +100,15 @@ static int ManageTerminatedTransfers (HWND hListV, int itemPos)
 { 
 char szTxt [512];
 LVITEM      LvItem;
-int  tNow  = (int) time(NULL);
+int  tNow  = time(NULL);
 
    szTxt[sizeof szTxt - 1]=0;
    ListView_GetItemText (hListV, itemPos, 1, szTxt, sizeof szTxt -1 );
    // The '.' is added for terminated transfer
-   if (szTxt [0] != ZOMBIE_STATUS)
+   if (szTxt [0] != '.')
    {
 	   // update target name
-      szTxt[0] = ZOMBIE_STATUS;
+      szTxt[0] = '.';
 	  ListView_SetItemText (hListV, itemPos, FD_FILE, szTxt);
 	  // Put in param the times before deletion
       LvItem.iSubItem =FD_PEER;

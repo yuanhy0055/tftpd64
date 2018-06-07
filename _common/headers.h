@@ -7,9 +7,6 @@
 // 
 //////////////////////////////////////////////////////
 
-// #define TFTP_CLIENT_ONLY 1
-
-
 #define WIN32_LEAN_AND_MEAN // this will assume smaller exe
 #define _CRT_SECURE_NO_DEPRECATE
 
@@ -19,7 +16,6 @@
 #include <windowsx.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <IPHlpApi.h>
 #include <commctrl.h>
 #include <shellapi.h>
 
@@ -33,7 +29,6 @@
 #include <process.h>
 
 #include "_libs/GUI/cmsgbox.h"
-#include "_libs/GUI/centerchild.h"
 #include "_libs/GUI/listview.h"
 #include "_libs/GUI/window.h"
 #include "_libs/registry/registry.h"

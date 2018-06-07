@@ -18,7 +18,6 @@
 
 #define TFTP_CLIENT_SEMAPHORE "Tftpd32ClientSemaphore"
 #define ID_CLIENT_TRANSFER      0x216       // timer identifier
-#define DEFAULT_TFTP_PORT  "69"
 
 static HWND      hTftpClientWnd;
 static HANDLE    hTftpClientSemaphore;
@@ -35,10 +34,10 @@ static struct S_TftpClient
     char szHost [256];              // adresse du serveur
     unsigned char BufSnd [MAXPKTSIZE];     // dernier datagram émis
     unsigned char BufRcv [MAXPKTSIZE];     // dernier datagram reçu
-	SOCKADDR_STORAGE  saFrom;      // Server address
+	struct sockaddr_in  saFrom;    // Server address
     int           nPort;           // port pour la connexion (0 -> default)
     DWORD         nToSend;         // nombre de caractères à envoyer
-    DWORD         nRcvd;           // nombre de caractères reçus
+    DWORD          nRcvd;           // nombre de caractères reçus
     SOCKET        s;                // socket de communication
     BOOL          bConnected;       // socket "connectée"
     HANDLE        hFile;            // Handler du fichier local
@@ -65,17 +64,32 @@ enum { TFTP_NOTCONNECTED = FALSE, TFTP_CONNECTED };
 // Block size in combo box
 static struct S_BlkSize
 {
-  char  szBlkSize [8];
+  char  szBlkSize [10];
 } 
 tBlkSize [] = 
 { 
-  {"Default"}, {"128"},   {"512"},   {"1024"}, {"1428"},  
-  {"2048"}, {"4096"}, {"8192"}, {"16384"}, {"32768"},
+  {"Default"}, {"128"},   {"512"},   {"1024"}, {"1432"},  {"2048"}, {"4096"}, {"8192"}, {"16384"},
 }; 
 
 
 
+///////////////////////////////////////////////////////
+// A reusable proc which retrieves the ip address of host
+///////////////////////////////////////////////////////
+struct in_addr ResolveHost (LPCSTR szHost)
+{
+struct hostent *  lpHostEnt;
+struct in_addr    sin_addr;
 
+  sin_addr.s_addr = inet_addr (szHost); /* doted address */
+  if (sin_addr.s_addr==INADDR_NONE)     /* if qualified hostname */
+  {                      
+      lpHostEnt = gethostbyname (szHost);
+      if (lpHostEnt!=NULL)
+         memcpy (& sin_addr.s_addr, lpHostEnt->h_addr, lpHostEnt->h_length);
+   }
+return sin_addr;
+} // ResolveHost
 
 
 
@@ -91,7 +105,7 @@ static void StopTransfer (void)
     // free resource
     closesocket (sTC.s);      sTC.s = INVALID_SOCKET;
     CloseHandle (sTC.hFile);  sTC.hFile = INVALID_HANDLE_VALUE;
-    sTC.bConnected = TFTP_NOTCONNECTED;
+    sTC.bConnected = FALSE;
     // reinit buttons
     EnableWindow (GetDlgItem (GetParent(hTftpClientWnd), IDC_CLIENT_SEND_BUTTON), TRUE);
     EnableWindow (GetDlgItem (GetParent(hTftpClientWnd), IDC_CLIENT_GET_BUTTON), TRUE);
@@ -167,10 +181,23 @@ return TRUE;
 } // TransferOK
 
 
-static void PopulateXRQPacket (char *szBlkSize, BOOL bFullPath)
+///////////////////////////////////////////////////////
+// Build the send the first message (RRQ or WRQ)
+// All Data are in sTC struct
+///////////////////////////////////////////////////////
+static BOOL TftpSendConnect (char *szBlkSize, BOOL bFullPath)
 {
 struct  tftphdr *tp;
+struct sockaddr_in SockAddr;
 char *p; // beginning of file
+
+    memset (& SockAddr, 0, sizeof SockAddr);
+    SockAddr.sin_family = AF_INET;
+
+    // both calls should never fails
+    if (    (sTC.s = socket (AF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET
+         ||  bind (sTC.s, (struct sockaddr *) &SockAddr, sizeof SockAddr) == INVALID_SOCKET )
+                return BadEndOfTransfer ("Can't create client socket.\nError code %d (%s)", WSAGetLastError (), LastErrorText());
 
     ///////////////////////////////
     // prepare the data packet
@@ -208,66 +235,20 @@ char *p; // beginning of file
 	// tsize is always set
    lstrcpy (& sTC.BufSnd [sTC.nToSend], "tsize"),    sTC.nToSend += sizeof "tsize";
    sTC.nToSend += 1+wsprintf(& sTC.BufSnd [sTC.nToSend], "%d", sTC.dwFileSize);
-} // PopulateXRQPacket
-
-
-///////////////////////////////////////////////////////
-// Build the send the first message (RRQ or WRQ)
-// All Data are in sTC struct
-///////////////////////////////////////////////////////
-static BOOL TftpSendConnect (char *szBlkSize, BOOL bFullPath)
-{
-ADDRINFO Hints, *ai;
-int              Rc;
-char             szPort[NI_MAXSERV];
-
-	// preparte a data packet (either RRQ or WRQ)
-	PopulateXRQPacket (szBlkSize, bFullPath);
 
     // resolve host name
-	memset (& Hints, 0, sizeof Hints);
-	Hints.ai_family   = AF_UNSPEC;
-	Hints.ai_socktype = SOCK_DGRAM;
-	Hints.ai_protocol = IPPROTO_UDP;
+    SockAddr.sin_addr = ResolveHost (sTC.szHost);
+    if (SockAddr.sin_addr.s_addr == INADDR_NONE)
+        return BadEndOfTransfer ("Host is unknown or invalid");
+    SockAddr.sin_port = htons ((short) (sTC.nPort==0 ? TFTP_DEFPORT : sTC.nPort)) ;
 
-	// first use port given as parameter, 
-	if (sTC.nPort==0)
-		  lstrcpy (szPort, "tftp");
-	else
-	{
-		 wsprintf (szPort, "%d", sTC.nPort), 	
-		 Hints.ai_flags    = AI_NUMERICSERV;
-	}
-    Rc = getaddrinfo (sTC.szHost, szPort, & Hints, &ai );
-	// last chance : use default tftp port 69
-	if (Rc==WSASERVICE_NOT_FOUND)
-	{
-	    Hints.ai_flags    = AI_NUMERICSERV;
-		Rc = getaddrinfo (sTC.szHost, DEFAULT_TFTP_PORT, & Hints, &ai );
-	}
-	if (Rc!=0)
-        return BadEndOfTransfer ("Host is unknown or invalid. Error %d", GetLastError());
-    sTC.s = socket( ai->ai_family,ai->ai_socktype, ai->ai_protocol ) ;
-	if (sTC.s == INVALID_SOCKET)
-	{
-		freeaddrinfo (ai);
-        return BadEndOfTransfer ( "Can't create client socket.\nError code %d (%s)", 
-			                      WSAGetLastError (), LastErrorText());
-	}
-    
-    // since remote port will change do not use either bind or connect 
-	Rc = sendto (sTC.s, sTC.BufSnd, sTC.nToSend , 0, ai->ai_addr, ai->ai_addrlen );
-	if (Rc == SOCKET_ERROR)
-	{
-		freeaddrinfo (ai);
+    // The send may fail if server is not running
+    if (sendto (sTC.s, (char *)tp, sTC.nToSend , 0, (struct sockaddr *) &SockAddr, sizeof SockAddr) == SOCKET_ERROR)
         return BadEndOfTransfer  ("can not send data packet.\n%s\nError code %d (%s)", 
-                                  "Tftp server may have been stopped",
-                                  WSAGetLastError (), LastErrorText());
-	}
-	freeaddrinfo (ai);
+                                  WSAGetLastError ()==WSAGetLastError () ? "Tftp server may have been stopped" : "",
+                                 WSAGetLastError (), LastErrorText());
 return TRUE;
 } // TftpSendConnect
-
 
 ///////////////////////////////////////////////////////
 // OACK msg processing
@@ -316,18 +297,9 @@ int              Rc;
        } // option BlkSize
 
        if (IS_OPT (pOpt, TFTP_OPT_PORT))
-	   {char szServ[NI_MAXSERV];
-		  getnameinfo ( (LPSOCKADDR) & sTC.saFrom, sizeof sTC.saFrom, 
-					    NULL, 0, szServ, sizeof szServ, NI_NUMERICSERV);
-		 LogToMonitor ("Port value is %s should be changed to %s", szServ, pValue);
-
-         switch (sTC.saFrom.ss_family)
-		 {
-		     case AF_INET :  ( (struct sockaddr_in *) (&sTC.saFrom) )->sin_port = htons (atoi (pValue));
-				              break;
-		     case AF_INET6 : ( (struct sockaddr_in6 *) (&sTC.saFrom) )->sin6_port = htons (atoi (pValue));
-				              break;
-		 }
+	   { 
+		 LogToMonitor ("Port value is %d", atoi (pValue));
+		 sTC.saFrom.sin_port = htons (atoi (pValue));
 		 Rc = connect (sTC.s, (struct sockaddr *) & sTC.saFrom, sizeof sTC.saFrom);
 		 LogToMonitor ("re-connect returns %d (%d)", Rc, GetLastError ());
 	   }
@@ -349,8 +321,7 @@ int Rc, nDummy ;
 
    sTC.nRcvd = 0;
    nDummy = sizeof  sTC.saFrom;
-   // use recvfrom in order to fill the saFrom field
-   if ( sTC.bConnected==TFTP_NOTCONNECTED )
+   if (! sTC.bConnected )
             Rc = recvfrom (sTC.s, sTC.BufRcv, sizeof sTC.BufRcv, 0,
 						  (struct sockaddr *) & sTC.saFrom, & nDummy);
    else     Rc = recv (sTC.s, sTC.BufRcv, sizeof sTC.BufRcv, 0);
@@ -358,11 +329,11 @@ int Rc, nDummy ;
    {
        return FALSE;
    }
-   // now it is safe to memorize the server address into socket structure
-   if (sTC.bConnected == TFTP_NOTCONNECTED)
+   // memorize the server address into socket structure
+   if (! sTC.bConnected)
    {
 	    connect (sTC.s, (struct sockaddr *) & sTC.saFrom, sizeof sTC.saFrom);
-        sTC.bConnected = TFTP_CONNECTED;
+        sTC.bConnected = TRUE;
    }
   sTC.nRcvd = Rc;
 return TRUE;
@@ -471,11 +442,6 @@ char szCurDir[MAX_PATH];
           GetDlgItemText (hParentWnd, IDC_CLIENT_HOST, sTC.szHost, sizeof sTC.szHost);
           GetDlgItemText (hParentWnd, IDC_CLIENT_LOCALFILE, sTC.szFile, sizeof sTC.szFile);
           GetDlgItemText (hParentWnd, IDC_CLIENT_REMOTEFILE, sTC.szDestFile, sizeof sTC.szDestFile);
-		  if (strchr (sTC.szFile, '%') != NULL  ||  strchr (sTC.szDestFile, '%') != NULL)
-		  {
-                CMsgBox (hWnd, "Character %% not supported by Tftpd32", APPLICATION, MB_OK | MB_ICONHAND);
-				break;
-		  }
 
           ComboBox_GetText (GetDlgItem (hParentWnd, IDC_CB_DATASEG), szCBTxt, sizeof szCBTxt);
  
@@ -489,13 +455,12 @@ char szCurDir[MAX_PATH];
           else
               if (    TftpCliOpenFile ()   
                &&  TftpSendConnect (szCBTxt, ISDLG_CHECKED(hParentWnd,IDC_CLIENT_FULL_PATH))  )
-              {int Rc;
+              {
                   EnableWindow (GetDlgItem (hParentWnd, IDC_CLIENT_SEND_BUTTON), FALSE);
                   EnableWindow (GetDlgItem (hParentWnd, IDC_CLIENT_GET_BUTTON), FALSE);
                   EnableWindow (GetDlgItem (hParentWnd, IDC_CLIENT_BREAK_BUTTON), TRUE);
                   SetTimer (hWnd, wItem==IDC_CLIENT_GET_BUTTON ? WM_CLIENT_DATA : WM_CLIENT_ACK, sTC.dwTimeout, NULL);
-                  Rc = WSAAsyncSelect (sTC.s, hWnd, wItem==IDC_CLIENT_GET_BUTTON ? WM_CLIENT_DATA : WM_CLIENT_ACK, FD_READ);
-				  Rc = GetLastError ();
+                  WSAAsyncSelect (sTC.s, hWnd, wItem==IDC_CLIENT_GET_BUTTON ? WM_CLIENT_DATA : WM_CLIENT_ACK, FD_READ);
               }
           else   CloseHandle (sTC.hFile);
           break;
@@ -547,7 +512,7 @@ static WNDPROC fEditBoxProc;
 
 
 // Hook designed to insert the name of the dragged file into the edit control
-LRESULT CALLBACK TftpClientFileNameProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+long CALLBACK TftpClientFileNameProc (HWND hWnd, UINT message, WPARAM wParam, LONG lParam)
 {
 char szFileName [MAX_PATH];
 static HANDLE hDrop;
@@ -626,7 +591,7 @@ return CallWindowProc (fEditBoxProc, hWnd, message, wParam, lParam);
 /////////////////////////////
 // Fenetre Background gestion des appels TCP
 //
-LRESULT CALLBACK TftpClientProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+int CALLBACK TftpClientProc (HWND hWnd, UINT message, WPARAM wParam, LONG lParam)
 {
 DWORD          nbWrt;
 struct tftphdr *tpr, *tps;
@@ -661,10 +626,8 @@ HWND            hCBWnd, hParentWnd;
 
       // edittext IDC_CLIENT_FILE will accept dropped file (works only because it is on the top in Z-Order
        DragAcceptFiles (GetDlgItem (hParentWnd, IDC_CLIENT_LOCALFILE), TRUE);
-          // fEditBoxProc = (WNDPROC) SetWindowLong (GetDlgItem (hParentWnd, IDC_CLIENT_LOCALFILE), GWL_WNDPROC, (LONG) TftpClientFileNameProc);
-          fEditBoxProc = (WNDPROC) SetWindowLongPtr (GetDlgItem (hParentWnd, IDC_CLIENT_LOCALFILE), GWLP_WNDPROC, (LONG_PTR) TftpClientFileNameProc);
+          fEditBoxProc = (WNDPROC) SetWindowLong (GetDlgItem (hParentWnd, IDC_CLIENT_LOCALFILE), GWL_WNDPROC, (LONG) TftpClientFileNameProc);
 //    SetWindowLong (GetDlgItem (hParentWnd, IDC_CLIENT_FILE), GWL_USERDATA, (LONG) TftpClientFileNameProc);
-    SetWindowLongPtr (GetDlgItem (hParentWnd, IDC_CLIENT_LOCALFILE), GWLP_USERDATA, (LONG_PTR) TftpClientFileNameProc);
          break;
 
     case WM_CLOSE :
@@ -755,7 +718,7 @@ LogToMonitor ("GUI: Closing Tftp Client");
         {
             if (! UdpRecv ())
                 return BadEndOfTransfer ("Error in Recv.\nError code is %d (%s)", WSAGetLastError (), LastErrorText() );
-            switch (htons (tpr->th_opcode))
+         switch (htons (tpr->th_opcode))
             {
               case TFTP_ERROR :
                    return BadEndOfTransfer ("Server stops the transfer.\nError #%d: %s", htons (tpr->th_code), tpr->th_msg);

@@ -8,7 +8,7 @@
 //////////////////////////////////////////////////////
 
 
-#define MAX_TFTP_OPTIONS	16
+
 
 
 ////////////////////////////////////////////////////////////
@@ -37,9 +37,8 @@ struct S_Trf_Buffers
 {
     char           buf[MAXPKTSIZE];     // one piece of file
     char           ackbuf[PKTSIZE];
-    SOCKADDR_STORAGE       from ;             // stack of address of remote peers
-    char           cnx_frame[PKTSIZE];		  // The 'connexion' datagram, contains file name
-	char		   padding[4];				  // set to zero before reading connect datagram
+    struct sockaddr_in  from ;          // stack of address of remote peers
+    char           cnx_frame[PKTSIZE];  // The 'connexion' datagram, contains file name
 } ;         // struct S_Trf_Buffers
 
 // transfer stats and progress bar : not mandatory 

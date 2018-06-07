@@ -32,4 +32,4 @@ void CopyListViewToClipboard (HWND hListV, int nbSubItems);
 BOOL CopyTextToClipboard (const char *sz);
 
 /* copy a combo box into another one */
-int CopyCBContent (HWND hFromCB, HWND hToCB, const char *lpszFind, int family);
+int CopyCBContent (HWND hFromCB, HWND hToCB, const char *lpszFind);

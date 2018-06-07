@@ -9,7 +9,7 @@ struct S_TftpGui
     DWORD   dwTransferId;       
     // items to be displayed
     char   *filename;
-    SOCKADDR_STORAGE stg_addr;
+    struct sockaddr_in from_addr;
     int    opcode;
     // stats
     struct S_Trf_Statistics stat;
